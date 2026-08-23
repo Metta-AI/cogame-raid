@@ -2,8 +2,9 @@
 ## truncation that keeps replay bytes parseable.
 
 import std/[json, strutils, unicode]
+import curly
 import support/helpers
-import raid/[orders]
+import raid/[orders, llm]
 
 proc parseFor(world: Sim, slot: int, text: string): Order =
   repairOrder(world, slot, parseOrder(extractJsonObject(text),
@@ -196,6 +197,75 @@ proc testDetailIsCapped() =
     "recorded error text is capped at 200 runes")
   done("fallback detail is capped")
 
+proc raisedBy(client: LlmClient, code: int, body: string): string =
+  ## The message `llm.textOf` raises for a response, which is what becomes
+  ## `fallback.detail`.
+  try:
+    discard client.textOf(Response(code: code, body: body), "",
+      "https://example.invalid/v1/messages")
+  except RaidError as error:
+    return error.msg
+  check(false, "textOf must raise on a " & $code & " response")
+
+proc testCapturedErrorTextIsRuneSafe() =
+  ## `llm.textOf` quotes an API error body - and a model reply cut off at
+  ## max_tokens - into the `RaidError` whose message becomes
+  ## `fallback.detail` in the replay. Every one of those cuts must land on a
+  ## RUNE boundary, and a body that is not valid UTF-8 in the first place must
+  ## not reach the replay either.
+  let client = LlmClient()
+  let emoji = "\u{1F525}"          ## FIRE, four bytes in UTF-8
+  ## 401/403 quotes 400 characters, 429 and every other non-2xx quote 300, and
+  ## the max_tokens branch quotes 160. Put the emoji astride each of those, so
+  ## a byte cut would split it.
+  for (code, cap) in [(403, 400), (429, 300), (500, 300)]:
+    let body = "e".repeat(cap - 2) & emoji & "tail"
+    let message = client.raisedBy(code, body)
+    checkEq(validateUtf8(message), -1,
+      "the " & $code & " message is valid UTF-8")
+    check(emoji in message,
+      "and carries the whole emoji, not two of its bytes (" & $code & ")")
+    check("e".repeat(cap - 2) in message, "having quoted the body")
+  let cutOff = $ %*{
+    "stop_reason": "max_tokens",
+    "content": [{"type": "text", "text": "e".repeat(158) & emoji & "tail"}]
+  }
+  let cutMessage = client.raisedBy(200, cutOff)
+  checkEq(validateUtf8(cutMessage), -1,
+    "a reply cut off at max_tokens is quoted on a rune boundary")
+  check(emoji in cutMessage, "with its last rune whole")
+  ## An error body that is itself invalid UTF-8 - a byte-truncated proxy page,
+  ## or binary - is sanitised rather than passed through.
+  let broken = "e".repeat(40) & emoji[0 ..< 2] & "tail"
+  check(validateUtf8(broken) >= 0, "the fixture really is invalid UTF-8")
+  checkEq(validateUtf8(client.raisedBy(429, broken)), -1,
+    "an invalid-UTF-8 body is dropped, not quoted")
+  done("captured error text is cut on rune boundaries")
+
+proc testDetailAtTheCapIsValidUtf8() =
+  ## The same string at the OTHER cap: `fallback.detail` is 200 runes, and the
+  ## 200th rune of this message is the 4-byte emoji. It has to survive whole
+  ## into the replay's event stream.
+  let client = LlmClient()
+  let emoji = "\u{1F525}"
+  let prefix = "llm throttled (429): "
+  let body = "e".repeat(MaxDetailRunes - prefix.runeLen - 1) & emoji & "tail"
+  let message = client.raisedBy(429, body)
+  check(message.startsWith(prefix), "the throttle message quotes the body")
+  var world = newWorld(testConfig())
+  world.applyTurn(@[0], @[Decision(order: scriptedOrder(world, 0, skStalwart),
+    source: osFallback, attempts: 2, cause: fcTransport, detail: message)])
+  let detail = world.firstEvent("fallback"){"detail"}.getStr()
+  checkEq(detail.runeLen, MaxDetailRunes, "the detail is 200 runes")
+  checkEq(detail, prefix & "e".repeat(MaxDetailRunes - prefix.runeLen - 1) &
+    emoji, "cut on the rune, so the emoji is whole")
+  checkEq(validateUtf8(detail), -1, "the recorded detail is valid UTF-8")
+  let serialised = $ %*{"events": [world.firstEvent("fallback")]}
+  checkEq(validateUtf8(serialised), -1,
+    "and so are the replay bytes carrying it")
+  discard parseJson(serialised)
+  done("a fallback detail whose 200th rune is multi-byte stays valid UTF-8")
+
 when isMainModule:
   testProsePrefixedJson()
   testFencedJson()
@@ -210,4 +280,6 @@ when isMainModule:
   testMissingIntentIsUnrecoverable()
   testFallbackAfterTwoFailures()
   testDetailIsCapped()
+  testCapturedErrorTextIsRuneSafe()
+  testDetailAtTheCapIsValidUtf8()
   echo "test_orders: parsing, repair and rune-boundary truncation check out"

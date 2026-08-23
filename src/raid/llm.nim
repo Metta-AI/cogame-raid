@@ -199,12 +199,16 @@ proc requestFor(client: LlmClient, system, user: string):
   result.headers = headers
   result.body = $body
 
-proc textOf(client: LlmClient, response: Response, error, url: string):
+proc textOf*(client: LlmClient, response: Response, error, url: string):
     string =
+  ## Raises `RaidError` with a one-line description of anything that is not a
+  ## usable reply. That message becomes `fallback.detail` in the replay, so
+  ## every captured fragment of a body is cut with `runeCap` - on RUNE
+  ## boundaries, never bytes (`labels.nim:31`).
   if error.len > 0:
     raise newException(RaidError, "llm transport: " & error)
   if response.code == 401 or response.code == 403:
-    let detail = response.body[0 .. min(response.body.high, 400)]
+    let detail = runeCap(response.body, 400)
     if "Model access is denied" in response.body and
         client.tryNextBedrockModel("no model access"):
       raise newException(RaidError, "bedrock model access denied: " & detail)
@@ -212,12 +216,12 @@ proc textOf(client: LlmClient, response: Response, error, url: string):
     raise newException(RaidError,
       "llm auth failed (" & $response.code & ") at " & url & ": " & detail)
   if response.code == 429:
-    let detail = response.body[0 .. min(response.body.high, 300)]
+    let detail = runeCap(response.body, 300)
     discard client.tryNextBedrockModel("throttled")
     raise newException(RaidError, "llm throttled (429): " & detail)
   if response.code < 200 or response.code >= 300:
     raise newException(RaidError, "anthropic error " & $response.code & ": " &
-      response.body[0 .. min(response.body.high, 300)])
+      runeCap(response.body, 300))
   let payload = parseJson(response.body)
   if payload{"stop_reason"}.getStr() == "refusal":
     raise newException(RaidError, "anthropic refusal")
@@ -226,7 +230,7 @@ proc textOf(client: LlmClient, response: Response, error, url: string):
       result.add(contentBlock{"text"}.getStr())
   if payload{"stop_reason"}.getStr() == "max_tokens" and '{' notin result:
     raise newException(RaidError, "reply cut off at max_tokens before any " &
-      "JSON: " & result[0 .. min(result.high, 160)].replace("\n", " "))
+      "JSON: " & runeCap(result, 160))
 
 proc causeOf(message: string): FallbackCause =
   let lowered = message.toLowerAscii()
