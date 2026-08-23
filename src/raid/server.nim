@@ -128,15 +128,23 @@ proc pushTurnFrames() =
 
 proc broadcastDone(results: JsonNode) =
   ## Bounded at DoneBroadcastSeconds per seat, then we move on: the artifacts
-  ## matter more than a slow reader.
+  ## matter more than a slow reader. The budget is ENFORCED, not just measured
+  ## - each seat adds 3.0 s to the allowance and a seat whose turn comes up
+  ## after the allowance is already spent is skipped, so the whole broadcast
+  ## can never hold the artifact writes for more than seats x 3.0 s.
   let payload = $ %*{"done": true, "result": results}
+  var allowance = epochTime()
   for slot, socket in shared.playerSockets:
-    let deadline = epochTime() + DoneBroadcastSeconds
+    allowance += DoneBroadcastSeconds
+    if epochTime() > allowance:
+      echo "raid: done broadcast is past its ", DoneBroadcastSeconds,
+        "s-per-seat budget; skipping slot ", slot
+      continue
     try:
       socket.send(payload)
     except CatchableError as error:
       echo "raid: done frame to slot ", slot, " failed: ", error.msg
-    if epochTime() > deadline:
+    if epochTime() > allowance:
       echo "raid: done frame to slot ", slot, " exceeded its ",
         DoneBroadcastSeconds, "s budget; moving on"
 
