@@ -12,8 +12,7 @@ import support/helpers
 const InheritedChromeIds = [
   "viewport", "stage", "board", "lightpool", "grain", "chrome", "scorebug",
   "plates-l", "plates-r", "clock", "clock-time", "clock-caption",
-  "ffwd-mini", "viewpanel", "minimap", "minimap-canvas", "zoombar",
-  "zoom-out", "zoom-slider", "zoom-in", "zoom-read", "mmwarn", "bannerlane",
+  "ffwd-mini", "mmwarn", "bannerlane",
   "killfeed", "transport", "btn-restart", "btn-back", "btn-play", "btn-fwd",
   "btn-end", "btn-loop", "btn-skip", "btn-spoilers", "ffwd-chip", "win-chip",
   "tick-clock", "speedchips", "scrub", "momentum", "scrub-fill", "lulls",
@@ -24,7 +23,15 @@ const InheritedChromeIds = [
 
 const AddedRaidIds = [
   "bossbar", "bossbar-fill", "phasetick-70", "phasetick-35", "bossbar-label",
-  "castbar", "enrageclock", "nameplates", "soakpip", "buffrow", "meters"
+  "castbar", "enrageclock", "nameplates", "soakpip", "buffrow", "meters",
+  "ev-lane", "ev-tip"
+]
+
+## The board is not pannable in raid (one fixed arena), so the starter's zoom
+## bar + minimap panel is dropped rather than hidden.
+const RemovedZoomIds = [
+  "viewpanel", "minimap", "minimap-canvas", "zoombar", "zoom-out",
+  "zoom-slider", "zoom-in", "zoom-read"
 ]
 
 const RemovedCtfIds = [
@@ -42,6 +49,25 @@ proc testChromeMarkup() =
   for id in RemovedCtfIds:
     check("id=\"" & id & "\"" notin page,
       "the CTF-only #" & id & " is gone")
+  for id in RemovedZoomIds:
+    check("id=\"" & id & "\"" notin page, "the zoom/minimap #" & id & " is gone")
+  check("core.attachMinimap" notin page and "core.zoomAt" notin page,
+    "and nothing wires the zoom API")
+  ## The event lane: markers are real buttons that seek on click, placed on
+  ## the scrubber's tick axis, and the transport band is reserved so the
+  ## nameplates sit above the scrubber instead of over it.
+  check("mark.onclick" in page and "core.seek(record.t)" in page,
+    "event markers seek on click")
+  check("document.createElement('button')" in page, "and are buttons")
+  check("root.style.setProperty('--band'" in page, "relayout reserves the transport band on :root")
+  check("#endcard.on { display: flex" in page and "classList.add('on')" in page,
+    "the endcard is shown with the class its CSS rule uses")
+  check("$('endcard').classList.remove('on')" in page and "rawSeek(tick)" in page,
+    "and every seek takes the endcard down again")
+  check("bottom: var(--band, 0px);" in page,
+    "the endcard stops above the transport band")
+  check("bottom: calc(var(--band, 0px) + 4 * var(--u))" in page,
+    "and the nameplates ride above it")
   ## The inherited relayout loop and its two knobs.
   check("--hudscale" in page, "the --hudscale relayout knob is inherited")
   check("classList.toggle('tiny'" in page, "and the .tiny class at 620 px")
@@ -56,7 +82,7 @@ proc testLegibleAt360() =
     "the enrage clock")
   ## The three things that must read at 360 px are inside that block.
   let block360 = page[page.find("@media (max-width: 640px)") .. ^1]
-  for needle in ["#viewpanel", "#nameplates", "#bossbar"]:
+  for needle in ["#nameplates", "#bossbar"]:
     check(needle in block360[0 ..< min(2200, block360.len)],
       needle & " is handled by the 640 px rules")
   check("clamp(13px, 4.2vw, 26px)" in page,
