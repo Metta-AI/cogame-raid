@@ -192,13 +192,11 @@ proc bossAndAddAttacks*(sim: var Sim) =
         withinPx(sim.boss.x, sim.boss.y, sim.cogs[target].x,
           sim.cogs[target].y, BossMeleeRange):
       let damage = sim.damageMultiplied(BossMeleeDamage)
-      let outcome = sim.damageCog(target, damage, "swing", BossName)
-      if damage < 40:
-        sim.record("boss_hit", %*{
-          "target": aliasOf(target), "ability": "swing", "amount": damage,
-          "absorbed": outcome.absorbed,
-          "hp_left": max(0, sim.cogs[target].hp)
-        })
+      ## No record here: `damageCog` self-events every instance of 40 or more
+      ## (`combat.nim:32`) and a swing is 55 before any multiplier, every one
+      ## of which is >= 1, so the landed swing is already in the transcript
+      ## exactly once. The whiff below is the only case that needs its own.
+      discard sim.damageCog(target, damage, "swing", BossName)
     else:
       sim.record("boss_hit", %*{
         "target": (if target >= 0: aliasOf(target) else: ""),
