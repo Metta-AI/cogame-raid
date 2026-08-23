@@ -98,6 +98,14 @@ proc runEncounter*(sim: var Sim, decide: Decider, now: Clock,
           decisions[i].source = osFallback
           decisions[i].cause = fcBudget
       else:
+        ## The per-turn deadline lives INSIDE `decide`, not around it: the
+        ## only wait a turn can make is `curly.makeRequests`, which is given
+        ## the attempt deadline and then the retry deadline
+        ## (`llm.nim:277-279`), and `config.validate` refuses a config whose
+        ## rounded sum exceeds `turnBudgetSeconds`. There is no wrapper timer
+        ## here because Nim cannot interrupt a blocking call from outside it -
+        ## an outer timer would measure the overrun without preventing it,
+        ## which is not a bound.
         decisions = decide(sim, seats)
       sim.applyTurn(seats, decisions)
       if onTurn != nil:
