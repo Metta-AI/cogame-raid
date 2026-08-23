@@ -241,6 +241,27 @@ if [ "${exit_code}" != "0" ]; then
   exit 1
 fi
 
+# Certification fails the episode with `player_error` on a player container
+# that exits non-zero, so assert the same thing here. Players lose the socket
+# when the game exits, which must be an ordinary end of episode, not a crash.
+for ((slot = 0; slot < seats; slot++)); do
+  player_deadline=$((SECONDS + 30))
+  while docker ps -q --filter "name=${prefix}-p${slot}" | grep -q .; do
+    if (( SECONDS > player_deadline )); then
+      echo "FAIL: player container ${slot} still running 30s after the game exited" >&2
+      dump_logs
+      exit 1
+    fi
+    sleep 2
+  done
+  player_exit="$(docker inspect -f '{{.State.ExitCode}}' "${prefix}-p${slot}")"
+  if [ "${player_exit}" != "0" ]; then
+    echo "FAIL: player container ${slot} exited ${player_exit}" >&2
+    dump_logs
+    exit 1
+  fi
+done
+
 # --------------------------------------------------------------------------
 # Assert the artifacts.
 # --------------------------------------------------------------------------
