@@ -16,13 +16,20 @@ import types, state, orders, labels
 
 const
   ## Stations the stalwart baseline stands on, tuned against the authored
-  ## floor (tools/tune_baselines.nim sweeps them; these are what it kept).
+  ## floor. `tools/tune_baselines.nim` is the grid harness: it sweeps the
+  ## four `{.intdefine.}` scalars below over six seeds of the default variant
+  ## and ranks the points by mean episode score, rejecting any tank stand a
+  ## cog cannot occupy and any point that fails to kill the certification
+  ## boss. The values here are the point it keeps; the station COORDINATES
+  ## are not swept - the pit, the pillars and the cleave reach fix them.
   ##
   ## The tank stands due NORTH of SMELTER-9 so its facing - and therefore
   ## every cleave - points at the empty top of the pit, and close enough to
   ## melee it: the design note's 617,180 is 149 px from a 40 px melee range,
   ## which holds no threat at all, so the ring distance is the melee ring.
-  TankStandDy* = 36
+  ## 36 is the closest the sweep can stand it: 34 and below is inside the
+  ## boss's own 56 px footprint, where `arena.canOccupyCog` is false.
+  TankStandDy* {.intdefine.}: int = 36
   ## The three dps and the healer sit on CARDINALS, never on the diagonals:
   ## the four pillars sit on the diagonals at radius 150 and would cut the
   ## line of sight a ranged attack needs.
@@ -210,18 +217,21 @@ proc stalwartTank(sim: Sim, slot: int): Order =
   discard
 
 const
-  HealWorthwhileHp* = 45
+  HealWorthwhileHp* {.intdefine.}: int = 45
     ## Do not spend 60 mana on a cog missing less than this: a 90 hp heal on
     ## a nearly-full cog is mostly overheal, and overheal is what runs the
     ## 1200-point pool dry before Meltdown.
-  HealThresholdPct* = 80
-  TankPriorityPct* = 45
+  HealThresholdPct* {.intdefine.}: int = 80
+  TankPriorityPct* {.intdefine.}: int = 35
     ## Below this fraction the tank outranks everyone for the healer's mana.
   ## The design note's stalwart heals "while any ally is under 70%". Tuned to
   ## 80: an order stands for 120 ticks and SMELTER-9 takes 36.7 hp/s off the
   ## tank, so a tank at 71% when the order is cut is at 10% when the next one
-  ## lands. 80 is the highest value the grid harness kept that still leaves
-  ## the mana pool intact through the phase-2 add waves.
+  ## lands. `tools/tune_baselines.nim` cannot separate 70, 80 and 90 - they
+  ## score identically at the kept stand - so the arithmetic picks, and the
+  ## sweep only rules out the tank-priority line above 35: pulling the
+  ## healer onto the tank earlier than that spends the mana that keeps the
+  ## dps alive through the phase-2 add waves (0.60 vs 0.58 mean score).
 
 proc stalwartHealer(sim: Sim, slot: int): Order =
   let stand = HealerStands[healerStandIndex(sim)]
