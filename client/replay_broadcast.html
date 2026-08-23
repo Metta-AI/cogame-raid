@@ -472,7 +472,8 @@ html, body {
   /* Bottom-right, clear of the blue scorebug/roster (top) and the transport
      bar (bottom). column-reverse so the newest row sits lowest, nearest the
      transport, and older kills stack upward — a broadcast lower-third feed. */
-  bottom: calc(76 * var(--u));
+  /* Above the transport band AND the nameplate row that rides on it. */
+  bottom: calc(var(--band, 0px) + 40 * var(--u));
   right: calc(12 * var(--u));
   display: flex;
   flex-direction: column-reverse;
@@ -702,135 +703,6 @@ html, body {
   image-rendering: pixelated;
 }
 
-/* ---------- 4b. VIEW CONTROLS (zoom + minimap) ----------
-   One group, top-right, under the reserved scorebug band: the minimap sits
-   directly over the control that summoned it, so "where am I" and "how far in
-   am I" read as a single instrument instead of two scattered widgets.
-   The board is NOT scroll-zoomed — a trackpad two-finger scroll belongs to the
-   page — so these controls are the primary way in, not a fallback, and they are
-   always present. The minimap only appears once there is something off-screen
-   to locate (zoom > 1); at fit it would just be the board again, smaller. */
-#viewpanel {
-  position: absolute;
-  top: calc(var(--topband, 0px) + 10 * var(--u));
-  right: calc(12 * var(--u));
-  z-index: 11;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: calc(5 * var(--u));
-  font-family: var(--pixfont);
-  /* Minimap and zoom bar share ONE width so the pair reads as a single stacked
-     instrument rather than two overlays that happen to be near each other.
-     The px floor is a TOUCH floor: chrome otherwise scales with the embed, and
-     a 300px-wide Observatory card would shrink the buttons below a fingertip. */
-  --viewpanel-w: max(calc(178 * var(--u)), 132px);
-}
-
-/* Board minimap. Aspect + display come from the STREAMED board's real w/h
-   (syncMinimapShape), because a four-team board is square and a fixed 1.874:1
-   inset would squash it. See-through so it reads as an overlay on play. */
-#minimap {
-  position: relative;
-  width: var(--viewpanel-w);
-  aspect-ratio: 1235 / 659;
-  background: rgba(8, 5, 3, 0.5);
-  box-shadow: 0 0 0 1px rgba(232, 163, 61, 0.3);
-  overflow: hidden;
-  cursor: crosshair;
-  display: none;
-}
-#minimap.on { display: block; }
-#minimap canvas {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-/* The label rides INSIDE the frame rather than adding a header row above it —
-   one element, not two stacked boxes. */
-#minimap .mm-cap {
-  position: absolute;
-  left: calc(4 * var(--u));
-  bottom: calc(2 * var(--u));
-  font-size: calc(7 * var(--u));
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--paper-dim);
-  text-shadow: 0 1px 2px rgba(8, 5, 3, 0.9);
-  pointer-events: none;
-}
-
-#zoombar {
-  display: flex;
-  align-items: center;
-  gap: calc(5 * var(--u));
-  width: var(--viewpanel-w);
-  padding: calc(3 * var(--u)) calc(5 * var(--u));
-  /* Opaque enough that the buttons keep their contrast over pale concrete —
-     a control you have to hunt for on a bright floor is not a control. */
-  background: rgba(12, 9, 6, 0.82);
-  box-shadow: 0 0 0 1px rgba(232, 163, 61, 0.22);
-}
-.zbtn {
-  font-family: var(--pixfont);
-  font-size: calc(14 * var(--u));
-  line-height: 1;
-  color: var(--paper);
-  background: rgba(242, 232, 216, 0.08);
-  border: none;
-  flex: none;
-  width: max(calc(20 * var(--u)), 22px);
-  height: max(calc(18 * var(--u)), 20px);
-  cursor: pointer;
-  padding: 0;
-}
-.zbtn:hover { background: rgba(242, 232, 216, 0.22); }
-.zbtn:disabled { opacity: 0.3; cursor: default; background: rgba(242, 232, 216, 0.05); }
-/* Zoom is geometric (1x..12x); the slider's travel is the LOG of it, so equal
-   thumb movement is equal perceived zoom rather than a dead left half. */
-#zoom-slider {
-  -webkit-appearance: none;
-  appearance: none;
-  flex: 1 1 auto;
-  width: auto;
-  min-width: 0;
-  margin: 0;
-  height: calc(2 * var(--u));
-  background: rgba(242, 232, 216, 0.22);
-  cursor: pointer;
-}
-#zoom-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: calc(9 * var(--u));
-  height: calc(13 * var(--u));
-  background: var(--amber);
-  cursor: grab;
-}
-#zoom-slider::-moz-range-thumb {
-  width: calc(9 * var(--u));
-  height: calc(13 * var(--u));
-  border: none;
-  border-radius: 0;
-  background: var(--amber);
-  cursor: grab;
-}
-#zoom-slider:focus-visible { outline: 1px solid var(--amber); outline-offset: calc(3 * var(--u)); }
-/* Never a bare number: the readout carries its unit, and "FIT" names the state
-   the board opens in instead of showing a meaningless 1.0x. */
-#zoom-read {
-  font-size: max(calc(9 * var(--u)), 9px);
-  letter-spacing: 0.06em;
-  color: var(--paper-dim);
-  flex: none;
-  width: max(calc(26 * var(--u)), 26px);
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-#zoom-read.zoomed { color: var(--amber); }
-
 /* ---------- 5. TRANSPORT ---------- */
 #transport {
   position: absolute;
@@ -906,6 +778,61 @@ html, body {
   pointer-events: none;
   z-index: 2;
 }
+/* Encounter events on the timeline: deaths, phase starts, the enrage,
+   interrupts and crucible soaks, each a button pinned at its tick on the
+   SAME 0->maxTicks axis as the seek track, so a click seeks straight to it.
+   Markers ahead of the playhead are hidden until "spoilers" is on. */
+.ev-lane {
+  position: absolute;
+  left: 0; right: 0; top: 0;
+  height: calc(12 * var(--u));
+  z-index: 4;
+  pointer-events: none;
+}
+.ev {
+  position: absolute;
+  top: 0;
+  width: max(calc(3 * var(--u)), 3px);
+  height: calc(12 * var(--u));
+  margin: 0; padding: 0; border: 0;
+  transform: translateX(-50%);
+  background: var(--paper-dim);
+  cursor: pointer;
+  pointer-events: auto;
+}
+.ev::before {
+  /* a wider invisible hit box so a 3 px tick is still a fingertip target */
+  content: ''; position: absolute; inset: calc(-3 * var(--u)) calc(-5 * var(--u));
+}
+.ev::after {
+  content: ''; position: absolute; left: 50%; top: 0;
+  width: calc(7 * var(--u)); height: calc(7 * var(--u));
+  transform: translate(-50%, calc(-4 * var(--u)));
+  border-radius: 50%; background: inherit;
+}
+.ev:hover, .ev:focus-visible { filter: brightness(1.35); outline: none; z-index: 5; }
+.ev.death { background: #ff5a3a; }
+.ev.phase { background: var(--amber); }
+.ev.enrage { background: #d63031; height: calc(16 * var(--u)); }
+.ev.interrupt { background: #45a85e; }
+.ev.crucible { background: #e0523a; }
+.ev.crucible.soaked { background: #3f7cc4; }
+.ev.ahead { display: none; }
+.ev-tip {
+  position: absolute;
+  bottom: calc(100% + 6 * var(--u));
+  transform: translateX(-50%);
+  padding: calc(3 * var(--u)) calc(6 * var(--u));
+  background: rgba(12, 9, 6, 0.94);
+  box-shadow: 0 0 0 1px rgba(232, 163, 61, 0.3);
+  color: var(--paper);
+  font: 600 calc(9 * var(--u))/1.2 'Courier New', monospace;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 9;
+  display: none;
+}
+.ev-tip.show { display: block; }
 .beat-marker {
   position: absolute;
   top: 0;
@@ -1449,15 +1376,6 @@ body[data-embed] #grain,
 body[data-embed] #status { display: none !important; }
 body[data-embed] #board { top: 0; height: 100%; }
 
-/* Opt-OUT of the #viewpanel overlay (zoom bar + minimap) by param only:
-   ?viewpanel=0 sets body[data-noviewpanel]. Defaults are unchanged everywhere
-   — the League Replayer shell loads the board with ?embed=1 and KEEPS zoom +
-   minimap (that's why #271 blanket-hiding the panel in all embeds was reverted
-   in #272). Only surfaces that explicitly ask — billboards (Lobby hero) and
-   thumbnail capture — append &viewpanel=0 to drop the panel. Independent of
-   embed: the two params don't touch each other. */
-body[data-noviewpanel] #viewpanel { display: none !important; }
-
 /* ============================================================
    RAID additions to the inherited paintbot chrome. Everything above this
    block is the starter's CSS, kept verbatim; everything below is the boss
@@ -1533,19 +1451,30 @@ body[data-noviewpanel] #viewpanel { display: none !important; }
 
 #nameplates {
   position: absolute; left: 50%; transform: translateX(-50%);
-  bottom: calc(2 * var(--u)); z-index: 6;
+  /* --band is the transport strip relayout() measures and reserves at the
+     bottom of the stage; the plates ride just above it, never over the
+     scrubber. */
+  bottom: calc(var(--band, 0px) + 4 * var(--u)); z-index: 6;
   display: flex; gap: calc(5 * var(--u)); flex-wrap: wrap;
   justify-content: center; width: min(98%, calc(700 * var(--u)));
   pointer-events: none;
 }
 #nameplates .plate {
-  display: flex; align-items: center; gap: calc(4 * var(--u));
+  /* Two lines: who (icon · alias · real name) over what (hp bar · intent),
+     so neither the name nor the intent has to ellipsize to fit five across. */
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  grid-template-rows: auto auto;
+  column-gap: calc(4 * var(--u)); row-gap: calc(2 * var(--u));
+  align-items: center;
   background: #1a100bd9; border: calc(1 * var(--u)) solid #4a2e21;
   padding: calc(2 * var(--u)) calc(5 * var(--u));
   min-width: calc(112 * var(--u)); flex: 1 1 calc(112 * var(--u));
   font: 600 calc(8.5 * var(--u))/1.15 'Courier New', monospace;
   color: #f2e8d8;
 }
+#nameplates .plate .plate-bars { grid-column: 1 / 3; grid-row: 2; }
+#nameplates .plate .plate-intent { grid-column: 3; grid-row: 2; }
 #nameplates .plate.dead { opacity: .42; filter: grayscale(1); }
 #nameplates .plate .role-icon {
   width: calc(11 * var(--u)); height: calc(11 * var(--u));
@@ -1555,7 +1484,7 @@ body[data-noviewpanel] #viewpanel { display: none !important; }
    match iframe: give the name the flex growth and a floor of its own. */
 .plate-name { flex: 1 1 auto; min-width: 3.2em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .plate-alias { color: #c9a894; flex: 0 0 auto; }
-.plate-bars { flex: 1 1 auto; min-width: calc(40 * var(--u)); }
+.plate-bars { flex: 1 1 auto; min-width: calc(44 * var(--u)); }
 .plate-hp, .plate-mana {
   position: relative; height: calc(6 * var(--u)); background: #2a1a12;
   border: calc(1 * var(--u)) solid #4a2e21; margin-top: calc(1 * var(--u));
@@ -1610,9 +1539,8 @@ body[data-noviewpanel] #viewpanel { display: none !important; }
    three things that must read from across the room, so they are the three
    the media query protects. ---- */
 @media (max-width: 640px) {
-  #viewpanel { display: none !important; }
   #speedchips .chip-label, .tbtn .label { display: none !important; }
-  #nameplates { gap: calc(3 * var(--u)); bottom: 0; }
+  #nameplates { gap: calc(3 * var(--u)); bottom: var(--band, 0px); }
   #nameplates .plate {
     min-width: calc(46% - calc(3 * var(--u)));
     flex: 1 1 calc(46% - calc(3 * var(--u)));
@@ -1689,20 +1617,6 @@ body[data-noviewpanel] #viewpanel { display: none !important; }
       <div class="plates" id="plates-r"></div>
     </div>
 
-    <div id="viewpanel">
-      <div id="minimap" title="Click or drag to move the view">
-        <canvas id="minimap-canvas"></canvas>
-        <span class="mm-cap">View</span>
-      </div>
-      <div id="zoombar" role="group" aria-label="Board zoom">
-        <button class="zbtn" id="zoom-out" title="Zoom out (x)" aria-label="Zoom out">&minus;</button>
-        <input id="zoom-slider" type="range" min="0" max="1000" step="1" value="0"
-               aria-label="Board zoom" aria-valuetext="Fitted">
-        <button class="zbtn" id="zoom-in" title="Zoom in (z)" aria-label="Zoom in">+</button>
-        <span id="zoom-read" aria-live="off">FIT</span>
-      </div>
-    </div>
-
     <div id="mmwarn">Replay hash mismatch &mdash; showing recorded inputs</div>
     <div id="bannerlane"></div>
     <div id="killfeed"></div>
@@ -1736,6 +1650,8 @@ body[data-noviewpanel] #viewpanel { display: none !important; }
         <div id="lulls"></div>
         <div class="scrub-win" id="scrub-win"></div>
         <div class="scrub-head" id="scrub-head"></div>
+        <div class="ev-lane" id="ev-lane" role="group" aria-label="Encounter events"></div>
+        <div class="ev-tip" id="ev-tip"></div>
       </div>
     </div>
 
@@ -2020,6 +1936,58 @@ body[data-noviewpanel] #viewpanel { display: none !important; }
       }
     }
 
+    // ---- event lane on the scrubber ---------------------------------------
+    var laneMarks = [];
+    function eventMarkClass(record) {
+      switch (record.type) {
+        case 'death': return 'death';
+        case 'phase_start': return 'phase';
+        case 'enrage': return 'enrage';
+        case 'interrupt': return record.result === 'success' ? 'interrupt' : null;
+        case 'telegraph_resolve':
+          if (record.kind !== 'crucible') return null;
+          return record.soakers === 0 ? 'crucible' : 'crucible soaked';
+        default: return null;
+      }
+    }
+    function buildEventLane() {
+      var lane = $('ev-lane');
+      var tip = $('ev-tip');
+      if (!lane) return;
+      lane.textContent = '';
+      laneMarks = [];
+      if (!meta || !meta.events) return;
+      meta.events.forEach(function (record) {
+        var cls = eventMarkClass(record);
+        var line = plainLanguage(record);
+        if (!cls || !line) return;
+        var mark = document.createElement('button');
+        mark.type = 'button';
+        mark.className = 'ev ' + cls;
+        mark.style.left = (100 * record.t / Math.max(1, tickCount - 1)) + '%';
+        mark.title = line;
+        mark.setAttribute('aria-label', line + ' (seek)');
+        mark.onclick = function (event) {
+          event.stopPropagation();
+          core.seek(record.t);
+        };
+        mark.onmouseenter = function () {
+          tip.textContent = line;
+          tip.style.left = mark.style.left;
+          tip.classList.add('show');
+        };
+        mark.onmouseleave = function () { tip.classList.remove('show'); };
+        lane.appendChild(mark);
+        laneMarks.push({ t: record.t, el: mark });
+      });
+    }
+    function gateEventLane(tick) {
+      var spoil = $('btn-spoilers').classList.contains('on');
+      for (var i = 0; i < laneMarks.length; i++) {
+        laneMarks[i].el.classList.toggle('ahead', !spoil && laneMarks[i].t > tick);
+      }
+    }
+
     function pumpFeed(tick) {
       if (!meta || !meta.events) return;
       var host = $('killfeed');
@@ -2123,7 +2091,7 @@ body[data-noviewpanel] #viewpanel { display: none !important; }
         row.appendChild(avoid);
         host.appendChild(row);
       }
-      $('endcard').classList.add('show');
+      $('endcard').classList.add('on');
       $('win-chip').textContent = r.end_rule.toUpperCase();
     }
 
@@ -2151,7 +2119,7 @@ body[data-noviewpanel] #viewpanel { display: none !important; }
         core.setPlaying(!core.isPlaying());
         $('btn-play').textContent = core.isPlaying() ? '\u25b6' : '\u275a\u275a';
       };
-      $('btn-restart').onclick = function () { core.seek(0); ended = false; };
+      $('btn-restart').onclick = function () { core.seek(0); };
       $('btn-back').onclick = function () {
         core.seek(Math.max(0, (lastFrame ? lastFrame.t : 0) - 1));
       };
@@ -2171,16 +2139,12 @@ body[data-noviewpanel] #viewpanel { display: none !important; }
       };
       $('btn-spoilers').onclick = function () {
         $('btn-spoilers').classList.toggle('on');
+        if (lastFrame) gateEventLane(lastFrame.t);
       };
       $('scrub').onclick = function (event) {
         var rect = $('scrub').getBoundingClientRect();
         var ratio = (event.clientX - rect.left) / Math.max(1, rect.width);
         core.seek(Math.round(ratio * (tickCount - 1)));
-      };
-      $('zoom-in').onclick = function () { core.zoomAt(1.25); };
-      $('zoom-out').onclick = function () { core.zoomAt(0.8); };
-      $('zoom-slider').oninput = function () {
-        core.setZoom(1 + (Number($('zoom-slider').value) / 1000) * 5);
       };
       window.addEventListener('keydown', function (event) {
         if (event.key === ' ') { $('btn-play').onclick(); event.preventDefault(); }
@@ -2190,6 +2154,7 @@ body[data-noviewpanel] #viewpanel { display: none !important; }
         else if (event.key === '.') $('btn-fwd').onclick();
         else if (event.key === 'r') $('btn-loop').onclick();
         else if (event.key === 'f') $('btn-skip').onclick();
+        else if (event.key === 'o') $('btn-spoilers').onclick();
       });
     }
 
@@ -2214,18 +2179,23 @@ body[data-noviewpanel] #viewpanel { display: none !important; }
         meta = next;
         tickCount = next.tick_count || 1;
         buildPlates();
+        buildEventLane();
         if (next.mismatch_tick >= 0) $('mmwarn').classList.add('show');
         $('status').textContent = '';
       },
       onFirstFrame: function () {
         var locker = $('lockerroom');
         if (locker) locker.classList.add('gone');
+        // The band was reserved before the worker was listening for resizes;
+        // fit the board to its real box now that it is.
+        core.setViewportFit();
       },
       onFrame: function (frame, tick) {
         lastFrame = frame;
         updateBoss(frame);
         updateCast(frame);
         pumpFeed(frame.t);
+        gateEventLane(frame.t);
         updatePlates(frame);
         if (frame.t % 24 === 0) {
           hpSeries.push(frame.boss[3]);
@@ -2237,20 +2207,48 @@ body[data-noviewpanel] #viewpanel { display: none !important; }
         if (!ended) { ended = true; showEndcard(); }
       }
     });
+    // Every seek — scrub click, event marker, back/forward, keyboard — takes
+    // the score screen down so the match is visible again; the card comes
+    // back through onEnd when playback reaches the end once more. The card
+    // never covers the transport band (#endcard bottom: var(--band)), so the
+    // scrubber stays clickable underneath it.
+    var rawSeek = core.seek;
+    core.seek = function (tick) {
+      rawSeek(tick);
+      if (tick < tickCount - 1) {
+        ended = false;
+        $('endcard').classList.remove('on');
+      }
+    };
     buildSpeedChips();
     wireTransport();
-    var minimapCanvas = $('minimap-canvas');
-    if (minimapCanvas) core.attachMinimap(minimapCanvas);
     window.addEventListener('resize', function () { core.setViewportFit(); });
     core.start();
 
     // --hudscale / .tiny relayout loop, inherited from the starter.
+    var lastBoardBox = '';
     function relayout() {
       var stage = $('stage');
+      // --u is computed on :root from --hudscale, so the knob has to be set
+      // on :root too (a value on #stage would never reach --u).
+      var root = document.documentElement;
       var width = stage.clientWidth || 760;
-      stage.style.setProperty('--hudscale',
+      root.style.setProperty('--hudscale',
         String(Math.max(0.5, Math.min(1.6, width / 760))));
       stage.classList.toggle('tiny', width <= 620);
+      // Reserve the transport's natural height at the bottom of the stage so
+      // the board, the nameplates and the endcard stop above the scrubber.
+      var transport = $('transport');
+      if (transport) root.style.setProperty('--band', transport.offsetHeight + 'px');
+      // The board canvas shrinks by the band, so re-fit the core whenever its
+      // box changes — it only listens for window resizes on its own, and a
+      // stale viewport stretches the arena into an ellipse.
+      var board = $('board');
+      var boxKey = board.clientWidth + 'x' + board.clientHeight;
+      if (boxKey !== lastBoardBox) {
+        lastBoardBox = boxKey;
+        if (core) core.setViewportFit();
+      }
       requestAnimationFrame(relayout);
     }
     relayout();
