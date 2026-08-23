@@ -42,6 +42,8 @@ switch(
   -s ABORTING_MALLOC=1
   -s FILESYSTEM=1
   -s ENVIRONMENT=web,worker,node
+  -s MODULARIZE=1
+  -s EXPORT_NAME=RaidReplayModule
   -s EXPORTED_RUNTIME_METHODS=HEAPU8
   -s EXPORTED_FUNCTIONS=_main,_malloc,_free,_raid_load_replay,_raid_frame,_raid_tick_count,_raid_mismatch_tick,_raid_meta_ptr,_raid_meta_len,_raid_frame_ptr,_raid_frame_len,_raid_error_ptr,_raid_error_len
   """).replace("\n", " ")

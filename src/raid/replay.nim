@@ -46,7 +46,7 @@ proc keyframesJson(sim: Sim): JsonNode =
     for row in frame.meters:
       meters.add(%row)
     result.add(%*{
-      "t": frame.t, "d": int(frame.digest), "cogs": cogs,
+      "t": frame.t, "d": int64(frame.digest), "cogs": cogs,
       "boss": frame.boss, "adds": adds, "pools": pools, "tel": tel,
       "mtr": meters
     })
@@ -192,14 +192,16 @@ proc firstDigestMismatch*(replay: JsonNode, rebuilt: Sim): int =
   let recorded = replay{"keyframes"}
   if recorded == nil or recorded.kind != JArray:
     return -1
-  var byTick = initTable[int, int]()
+  ## int64, not int: `int` is 32 bits under emscripten and an FNV-1a u32
+  ## digest overflows it.
+  var byTick = initTable[int, int64]()
   for frame in rebuilt.keyframes:
-    byTick[frame.t] = int(frame.digest)
+    byTick[frame.t] = int64(frame.digest)
   for frame in recorded:
     let t = frame{"t"}.getInt(-1)
     if t < 0 or not byTick.hasKey(t):
       continue
-    if byTick[t] != frame{"d"}.getInt():
+    if byTick[t] != frame{"d"}.getBiggestInt():
       return t
   -1
 

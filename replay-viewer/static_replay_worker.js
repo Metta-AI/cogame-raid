@@ -6,8 +6,7 @@
 // `window`; a classic Worker can provide that alias without a second bundle.
 self.window = self;
 
-var Module = {};
-var runtimeReady = false;
+var Module = null;
 var initMessage = null;
 var runtimeLoaded = false;
 var core = null;
@@ -79,11 +78,31 @@ async function loadArt(base) {
   }));
 }
 
+// MODULARIZE: the emitted script publishes a factory, so the runtime is
+// created explicitly rather than by patching a global before it loads.
+var modulePromise = null;
+function ensureRuntime() {
+  if (modulePromise) return modulePromise;
+  modulePromise = self.RaidReplayModule({
+    locateFile: function (file) {
+      return new URL(file, self.location.href).toString();
+    },
+    onAbort: function (what) {
+      reportFailure(new Error('Replay runtime aborted (' + what + ')'));
+    }
+  }).then(function (instance) {
+    Module = instance;
+    return instance;
+  });
+  return modulePromise;
+}
+
 async function start() {
-  if (!runtimeReady || !initMessage || runtimeLoaded || failed || disposed) return;
+  if (!initMessage || runtimeLoaded || failed || disposed) return;
   var message = initMessage;
   initMessage = null;
   try {
+    await ensureRuntime();
     core = self.RaidBroadcastCore.create({
       canvas: message.canvas,
       viewportWidth: message.width,
@@ -142,18 +161,6 @@ function advance(frames) {
     reportFailure(error);
   }
 }
-
-Module.locateFile = function (path) {
-  return new URL(path, self.location.href).toString();
-};
-Module.onAbort = function (what) {
-  reportFailure(new Error('Replay runtime aborted (' + what + ')'));
-};
-Module.onRuntimeInitialized = function () {
-  runtimeReady = true;
-  start();
-};
-self.Module = Module;
 
 self.onmessage = function (event) {
   var message = event.data || {};

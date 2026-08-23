@@ -10,8 +10,8 @@
 const fs = require('fs');
 const path = require('path');
 
-const modulePath = process.argv[2];
-const replayPath = process.argv[3];
+const modulePath = path.resolve(process.argv[2] || '');
+const replayPath = path.resolve(process.argv[3] || '');
 const expectedTicks = process.argv[4] ? Number(process.argv[4]) : 0;
 
 if (!modulePath || !replayPath) {
@@ -24,13 +24,11 @@ function fail(message) {
   process.exit(1);
 }
 
-const Module = {
-  locateFile: function (file) { return path.join(path.dirname(modulePath), file); },
-  onAbort: function (what) { fail('runtime aborted: ' + what); }
-};
-global.Module = Module;
+// The emitted loader resolves its .data package relative to the CWD, so run
+// from the bundle directory rather than fighting locateFile.
+process.chdir(path.dirname(modulePath));
 
-Module.onRuntimeInitialized = function () {
+function run(Module) {
   const decode = (ptr, len) => !ptr || !len ? '' :
     new TextDecoder().decode(Module.HEAPU8.slice(ptr, ptr + len));
 
@@ -95,6 +93,12 @@ Module.onRuntimeInitialized = function () {
   console.log('WASM-SMOKE OK: ' + ticks + ' ticks, digest ' + endDigest +
     ', ' + (meta.events ? meta.events.length : 0) + ' events');
   process.exit(0);
-};
+}
 
-require(path.resolve(modulePath));
+// MODULARIZE: the emitted script exports a factory that resolves once the
+// runtime is up, so there is no global to patch and no race to lose.
+const factory = require(modulePath);
+factory({
+  locateFile: (file) => path.join(path.dirname(modulePath), file),
+  onAbort: (what) => fail('runtime aborted: ' + what)
+}).then(run).catch((error) => fail(String(error && error.stack || error)));

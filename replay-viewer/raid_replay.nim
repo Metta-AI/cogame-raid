@@ -41,7 +41,7 @@ proc frameJson(index: int): JsonNode =
   for row in f.meters:
     meters.add(%row)
   %*{
-    "t": f.t, "d": int(f.digest), "cogs": cogs, "boss": f.boss,
+    "t": f.t, "d": int64(f.digest), "cogs": cogs, "boss": f.boss,
     "adds": adds, "pools": pools, "tel": tel, "mtr": meters
   }
 
@@ -76,8 +76,13 @@ proc raidLoadReplay(data: ptr uint8, length: cint): cint
       raise newException(RaidError, "replay re-derived zero frames")
     frame = $frameJson(0)
     return 1
-  except CatchableError as error:
-    lastError = error.msg
+  except Exception as error:
+    ## Exception, not CatchableError: a Defect from the wasm build (an index
+    ## or range check) must surface as a message in the shell, not as a
+    ## silent zero with an empty error string.
+    lastError = $error.name & ": " & error.msg
+    if lastError.len == 0:
+      lastError = "unknown failure while loading the replay"
     return 0
 
 proc raidFrame(index: cint): cint {.exportc: "raid_frame", cdecl.} =
@@ -88,8 +93,8 @@ proc raidFrame(index: cint): cint {.exportc: "raid_frame", cdecl.} =
     let clamped = clamp(int(index), 0, frames.len - 1)
     frame = $frameJson(clamped)
     return cint(clamped)
-  except CatchableError as error:
-    lastError = error.msg
+  except Exception as error:
+    lastError = $error.name & ": " & error.msg
     return -1
 
 proc raidTickCount(): cint {.exportc: "raid_tick_count", cdecl.} =

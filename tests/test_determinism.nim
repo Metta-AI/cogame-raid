@@ -97,9 +97,9 @@ proc testNoFloatingPointInTheStepPath() =
         break
   done("no floating point anywhere in the step path")
 
-proc digestsOf(world: Sim): seq[int] =
+proc digestsOf(world: Sim): seq[int64] =
   for frame in world.keyframes:
-    result.add(int(frame.digest))
+    result.add(int64(frame.digest))
 
 proc testSameSeedSameDigests() =
   let config = testConfig()
@@ -151,7 +151,7 @@ proc testGoldenFixture() =
   let world = runScripted(config, skStalwart)
   var got = newJArray()
   for frame in world.keyframes:
-    got.add(%int(frame.digest))
+    got.add(%int64(frame.digest))
   let golden = parseJson(repoFile("tests/fixtures/golden_digests.json"))
   checkEq(golden{"game_version"}.getStr(), GameVersion,
     "the fixture was recorded against this GameVersion")
