@@ -47,6 +47,7 @@ Three files are generated and must be regenerated rather than edited:
 ```bash
 python3 tools/build_manifest.py          # coworld_manifest_template.json
 python3 scripts/art/gen_raid_art.py data/art && cp data/art/* client/art/
+python3 scripts/art/split_cog_sheet.py data/art && cp data/art/cog_*.png client/art/   # nano-banana cog sprites
 nim r --path:src --path:tests tools/record_golden.nim
 ```
 
