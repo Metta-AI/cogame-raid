@@ -460,7 +460,7 @@ proc stepOnce*(sim: var Sim) =
       sim.adds[i].alive = false
       sim.addsKilled.inc
       sim.record("add_death", %*{
-        "id": addName(sim.adds[i].id), "killer": "",
+        "id": addName(sim.adds[i].id), "killer": sim.adds[i].killer,
         "alive_after": sim.addsAlive()
       })
   sim.updateFeed()

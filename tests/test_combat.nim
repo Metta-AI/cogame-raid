@@ -173,6 +173,25 @@ proc testDamageIsAttributed() =
   checkEq(world.adds[0].hp, AddHp - 60, "and lands")
   done("meters attribute damage")
 
+proc testAddDeathNamesItsKiller() =
+  ## `add_death.killer` used to be the empty string on every record. An add
+  ## carries its last hitter the same way a cog does, so the feed and the
+  ## replay can say who cleared the wave.
+  var world = quietWorld()
+  world.adds.add(Add(id: 1, x: PitCx, y: PitCy - 100, hp: AddHp, alive: true,
+    target: -1))
+  world.damageAdd(0, 2, AddHp - 1)
+  checkEq(world.adds[0].killer, "", "a hit that does not kill names nobody")
+  world.damageAdd(0, 4, 1)
+  checkEq(world.adds[0].killer, aliasOf(4), "the LAST hitter is the killer")
+  world.runTicks(1)
+  let record = world.firstEvent("add_death")
+  check(record != nil, "the add's death is evented")
+  checkEq(record{"killer"}.getStr(), aliasOf(4),
+    "and the event carries the alias, not an empty string")
+  checkEq(record{"id"}.getStr(), addName(1), "for the add that died")
+  done("add_death names the cog that landed the last hit")
+
 proc testOverhealIsRecorded() =
   var world = quietWorld()
   world.cogs[0].hp = world.cogs[0].maxHp - 10
@@ -193,5 +212,6 @@ when isMainModule:
   testShieldExpiresUnspent()
   testMultiplierOrder()
   testDamageIsAttributed()
+  testAddDeathNamesItsKiller()
   testOverhealIsRecorded()
   echo "test_combat: all combat checks passed"

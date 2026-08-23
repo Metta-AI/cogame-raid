@@ -293,6 +293,11 @@ type
     attackCd*: int
     histX*, histY*: int
     stuckRotate*: int
+    killer*: string
+      ## Alias of the cog whose hit took the add to 0 hp, the way a cog
+      ## carries the name of whatever killed it. Cosmetic: it feeds the
+      ## `add_death` event and nothing in the step reads it, so it is not in
+      ## `raidStateDigest`.
 
   Pool* = object
     id*: int

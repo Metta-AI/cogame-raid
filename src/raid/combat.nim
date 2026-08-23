@@ -77,6 +77,10 @@ proc damageAdd*(sim: var Sim, index, slot, amount: int) =
   sim.adds[index].hp = max(0, before - amount)
   if slot >= 0:
     sim.cogs[slot].damageToAdds += before - sim.adds[index].hp
+    if sim.adds[index].hp <= 0:
+      ## Last hitter, the same way `damageCog` stamps a cog's killer: step 15
+      ## turns the 0 hp into the `add_death` event and reads this.
+      sim.adds[index].killer = aliasOf(slot)
 
 proc healBoss*(sim: var Sim, amount: int) =
   sim.boss.hp = min(sim.boss.maxHp, sim.boss.hp + amount)
