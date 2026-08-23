@@ -110,10 +110,10 @@ proc testViewerAndTimeout() =
 
 proc testImageNamesAgreeWithCompose() =
   let m = manifest()
-  checkEq(m["game"]["runnable"]["image"].getStr(), "{{GAME_IMAGE}}",
+  checkEq(m["game"]["runnable"]["image"].getStr(), "{{RAID_IMAGE}}",
     "the game image is the template placeholder")
   for entry in m["player"]:
-    checkEq(entry["image"].getStr(), "{{PLAYER_IMAGE}}",
+    checkEq(entry["image"].getStr(), "{{RAID_IMAGE}}",
       entry["id"].getStr() & " uses the player image placeholder")
     checkEq(entry["run"][0].getStr(), "/bin/raid-player",
       entry["id"].getStr() & " runs the player entrypoint")

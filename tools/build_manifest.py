@@ -329,7 +329,7 @@ def variant(vid, name, description, boss, enrage, max_ticks, wall):
 def player_entry(pid, name, description, scripted):
     entry = {
         "id": pid, "name": name, "type": "player", "description": description,
-        "image": "{{PLAYER_IMAGE}}", "run": ["/bin/raid-player"],
+        "image": "{{RAID_IMAGE}}", "run": ["/bin/raid-player"],
         "resources": {
             "requests": {"cpu": "100m", "memory": "64Mi"},
             "limits": {"cpu": "1"},
@@ -356,7 +356,7 @@ def build():
             "episode_timeout_minutes": 20,
             "runnable": {
                 "type": "game",
-                "image": "{{GAME_IMAGE}}",
+                "image": "{{RAID_IMAGE}}",
                 "run": ["/bin/raid"],
                 "env": {
                     "ANTHROPIC_API_KEY_URI":

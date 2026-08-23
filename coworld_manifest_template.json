@@ -20,7 +20,7 @@
     "episode_timeout_minutes": 20,
     "runnable": {
       "type": "game",
-      "image": "{{GAME_IMAGE}}",
+      "image": "{{RAID_IMAGE}}",
       "run": [
         "/bin/raid"
       ],
@@ -541,7 +541,7 @@
       "name": "stalwart",
       "type": "player",
       "description": "The bundled certification player and the default baseline: the correct execution of the encounter, played by the server with no LLM involved.",
-      "image": "{{PLAYER_IMAGE}}",
+      "image": "{{RAID_IMAGE}}",
       "run": [
         "/bin/raid-player"
       ],
@@ -564,7 +564,7 @@
       "name": "greenhorn",
       "type": "player",
       "description": "The weaker scripted baseline: everyone in melee, everyone dodging everything, nobody interrupting, nobody soaking, adds ignored. A clean floor for the ladder.",
-      "image": "{{PLAYER_IMAGE}}",
+      "image": "{{RAID_IMAGE}}",
       "run": [
         "/bin/raid-player"
       ],
@@ -587,7 +587,7 @@
       "name": "Raid Prompt Player",
       "type": "player",
       "description": "The reference raid policy: delivers its PLAYER_PROMPT to the game and spectates until the final frame. Field your own by uploading this same image with a different PLAYER_PROMPT.",
-      "image": "{{PLAYER_IMAGE}}",
+      "image": "{{RAID_IMAGE}}",
       "run": [
         "/bin/raid-player"
       ],
