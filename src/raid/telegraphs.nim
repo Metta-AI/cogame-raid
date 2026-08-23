@@ -103,6 +103,10 @@ proc resolveOne(sim: var Sim, tel: Telegraph) =
     poolId = sim.spawnPool(tel.cx, tel.cy, tel.radius)
   of tkCrucible:
     sim.boss.pourCd = pourCadence(sim.boss.phase)
+    ## No `avoidableHits` here, unlike the cleave and the pour: standing in a
+    ## crucible is the CORRECT play (240 damage split beats a permanent Spill
+    ## stack), so counting it would make soaking look like a mistake in the
+    ## results.
     if hit.len == 0:
       ## Nobody soaked: a permanent Spill stack, and no pool.
       if sim.boss.spillStacks < SpillMaxStacks:
