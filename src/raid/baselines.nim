@@ -178,16 +178,6 @@ proc neediestAlly(sim: Sim): tuple[slot, missing: int] =
       result = (i, missing)
 
 proc stalwartTank(sim: Sim, slot: int): Order =
-  result = Order(intent: inTankBoss, station: stPoint, target: "boss",
-    onTelegraph: rxHold, px: PitCx, py: PitCy - TankStandDy, hasPoint: true,
-    note: "north of the boss so the cone points at empty floor",
-    say: "cone is north")
-  if slot in crucibleSoakers(sim):
-    ## Standing soak duty: keep tanking, but step INTO the crucible when it
-    ## lands instead of out of it.
-    result.onTelegraph = rxSoak
-    result.note = "tanking, and I take the crucible when it drops"
-    result.say = "crucible on me"
   ## The design note's tank "normally holds cleaves". It cannot, and the
   ## arithmetic says so: 120 hp every 8 s (15 hp/s) on top of 36.7 hp/s of
   ## boss melee is 52 hp/s against a healer whose SUSTAINED ceiling is
@@ -195,8 +185,20 @@ proc stalwartTank(sim: Sim, slot: int): Order =
   ## Stepping out costs the tank half its melee uptime and buys the raid a
   ## tank that lives to Meltdown; the cone still lands on empty floor,
   ## because the boss's facing is FROZEN for the whole telegraph and the rest
-  ## of the raid stands beyond its 180 px reach.
-  result.onTelegraph = rxDodge
+  ## of the raid stands beyond its 180 px reach. So the default reaction is
+  ## `dodge`, not the note's `hold`.
+  result = Order(intent: inTankBoss, station: stPoint, target: "boss",
+    onTelegraph: rxDodge, px: PitCx, py: PitCy - TankStandDy, hasPoint: true,
+    note: "north of the boss so the cone points at empty floor",
+    say: "cone is north")
+  if slot in crucibleSoakers(sim):
+    ## Standing soak duty: keep tanking, but step INTO the crucible when it
+    ## lands instead of out of it. `rxSoak` ignores cleaves outright
+    ## (`control.nim:211-215`), so this costs the tank nothing against the
+    ## cone: it keeps walking to its stand and the cone still lands north.
+    result.onTelegraph = rxSoak
+    result.note = "tanking, and I take the crucible when it drops"
+    result.say = "crucible on me"
   if sim.cogs[slot].tauntCd == 0 and
       (sim.boss.target != slot or phaseJustStarted(sim)):
     result.intent = inTaunt

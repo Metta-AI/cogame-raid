@@ -188,10 +188,52 @@ proc testStalwartPlaysTheEncounter() =
     "and every Overload is interrupted rather than landing")
   done("stalwart plays the encounter, not just the boss")
 
+proc testStalwartSoaksCrucibles() =
+  ## Soak duty in Meltdown is a STANDING assignment, not a comment: the
+  ## reaction the tank actually emits has to be `soak`, or every crucible
+  ## resolves empty and SMELTER-9 banks a permanent Spill stack.
+  var world = newWorld(testConfig())
+  world.boss.phase = 3
+  world.boss.hp = world.boss.maxHp div 4
+  let tank = world.tankSlot()
+  let healer = world.healerSlot()
+  let healthy = scriptedOrder(world, tank, skStalwart)
+  checkEq($healthy.onTelegraph, "soak",
+    "a healthy phase-3 tank takes the crucible")
+  checkEq($scriptedOrder(world, healer, skStalwart).onTelegraph, "dodge",
+    "and the healer stays out of it")
+  ## Under 60 % the tank cannot eat 240 alone, so the duty spreads to the dps.
+  world.cogs[tank].hp = world.cogs[tank].maxHp div 2
+  for slot in 0 ..< Seats:
+    if world.cogs[slot].role == roleDps:
+      checkEq($scriptedOrder(world, slot, skStalwart).onTelegraph, "soak",
+        "with the tank low the dps share the circle")
+  checkEq($scriptedOrder(world, healer, skStalwart).onTelegraph, "dodge",
+    "the healer never soaks; its output cannot be replaced")
+  ## Before Meltdown nobody soaks - there is no crucible to soak.
+  world.boss.phase = 2
+  world.cogs[tank].hp = world.cogs[tank].maxHp
+  checkEq($scriptedOrder(world, tank, skStalwart).onTelegraph, "dodge",
+    "and outside Meltdown the tank dodges, cleaves included")
+  ## End to end: over a full stalwart episode every crucible that resolves
+  ## finds a body in it, so the boss banks no Spill stack.
+  let played = runScripted(testConfig(), skStalwart)
+  var crucibles = 0
+  for record in played.eventsOf("telegraph_resolve"):
+    if record{"kind"}.getStr() != "crucible":
+      continue
+    crucibles.inc
+    check(record{"soakers"}.getInt() >= 1,
+      "crucible " & $record{"id"}.getInt() & " resolved with nobody in it")
+  check(crucibles > 0, "the episode reached Meltdown and poured a crucible")
+  checkEq(played.boss.spillStacks, 0, "so SMELTER-9 banks no Spill stack")
+  done("stalwart soaks the crucible instead of banking Spill for the boss")
+
 when isMainModule:
   testBoundedLegalOrders()
   testNoAbilityFiresOnCooldown()
   testCertificationKill()
   testStalwartBeatsGreenhorn()
   testStalwartPlaysTheEncounter()
+  testStalwartSoaksCrucibles()
   echo "test_baselines: the scripted baselines are bounded, legal and ordered"
