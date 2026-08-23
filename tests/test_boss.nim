@@ -40,6 +40,29 @@ proc testCleaveCadence() =
       "the cadence counter restarts from the RESOLUTION in phase " & $phase)
   done("cleave cadence by phase")
 
+proc testFirstCleaveAndPourTicks() =
+  ## The first cleave is the 96th tick of the encounter and the first pour the
+  ## 192nd, which on the sim's 0-BASED tick index is 95 and 191: the counters
+  ## are armed before tick 0 and tick 0 spends a decrement on them, unlike
+  ## every re-arm, which happens mid-tick. docs/RULES.md says so in those
+  ## words; this pins it either way round.
+  var world = newWorld(testConfig())
+  world.runTicks(240)
+  var firstCleave, firstPour = -1
+  for record in world.eventsOf("telegraph"):
+    let tick = record{"t"}.getInt()
+    case record{"kind"}.getStr()
+    of "cleave":
+      if firstCleave < 0: firstCleave = tick
+    of "pour", "crucible":
+      if firstPour < 0: firstPour = tick
+    else: discard
+  checkEq(firstCleave, CleaveFirstTick - 1,
+    "the first cleave is drawn on the 96th tick, index 95")
+  checkEq(firstPour, PourFirstTick - 1,
+    "and the first pour on the 192nd, index 191")
+  done("the first cleave and the first pour start on the documented ticks")
+
 proc testCleaveCone() =
   var world = quietWorld()
   world.boss.aim = 64          ## due north
@@ -294,6 +317,7 @@ proc testBossWhiffsOutOfReach() =
 when isMainModule:
   testPhaseTable()
   testCleaveCadence()
+  testFirstCleaveAndPourTicks()
   testCleaveCone()
   testFacingFrozenDuringTelegraph()
   testPourDrawsOnlyNonTanks()

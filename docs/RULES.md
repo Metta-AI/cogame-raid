@@ -131,7 +131,8 @@ A frontal cone: **±32 brads (±45°) around the boss's frozen facing, reach
 the tick the cast starts. On resolution: **120 damage** to every living cog
 whose body centre is inside. Cadence from the previous cleave's resolution:
 **192 ticks (8 s) in phase 1, 168 (7 s) in phase 2, 144 (6 s) in phase 3.** The
-first cleave starts at tick 96.
+first cleave starts on the 96th tick of the encounter — tick index 95, because
+the counter is armed before tick 0 and tick 0 spends a decrement on it.
 
 ### Ability 2 — Slag Pour (phases 1 and 2)
 
@@ -142,7 +143,8 @@ position at that instant. **Telegraph 60 ticks (2.5 s).** On resolution:
 left for **240 ticks (10 s)**, dealing **12 damage** to every cog inside it on
 every 24th tick after the pool's spawn tick. At most **6** pools exist; a seventh
 expires the oldest. Cadence from the previous resolution: **240 ticks (10 s)
-phase 1, 216 (9 s) phase 2.** First pour at tick 192.
+phase 1, 216 (9 s) phase 2.** First pour on the 192nd tick, index 191, the
+same way.
 
 ### Ability 3 — Crucible Pour (phase 3 only; replaces Slag Pour)
 
