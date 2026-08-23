@@ -42,6 +42,15 @@ when isMainModule:
   var prompt = getEnv("PLAYER_PROMPT")
   let scripted = getEnv("PLAYER_SCRIPTED").strip()
   if prompt.strip().len == 0 and scripted.len == 0:
+    ## Deliberate departure from the design note's "a seat that sets neither
+    ## defaults to PLAYER_SCRIPTED=stalwart". That rule is the SERVER's, and
+    ## it still holds (`server.nim:376-378`): a seat that registers with
+    ## neither field, or never registers, is seated as stalwart. But the
+    ## manifest ships this binary with no env as `raid-player`, "the
+    ## reference raid policy", so a bare container that registered as
+    ## `scripted` would be an LLM-free seat wearing an LLM policy's name.
+    ## It registers with the reference prompt instead, and the server's
+    ## default stays the path for a seat that never gets that far.
     prompt = DefaultPrompt
   let policy = getEnv("PLAYER_POLICY_LABEL")
 
