@@ -20,6 +20,12 @@
   var BOSS_COLOR = '#d63031';
   var ADD_COLOR = '#8d6e63';
   var ALIASES = ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo'];
+  // Mirrors TankMaxHp / HealerMaxHp / DpsMaxHp in src/raid/types.nim; the
+  // generated wire_constants.js overrides it when present.
+  var ROLE_HP = { tank: 300, healer: 160, dps: 180 };
+  if (scope.RAID_WIRE && scope.RAID_WIRE.roleHp) ROLE_HP = scope.RAID_WIRE.roleHp;
+  var SHOT_LIFE = 7;     // draws a tracer stays on the board (~0.3 s at 24 Hz)
+  var HEAL_LIFE = 10;
   var TEL_CLEAVE = 0, TEL_POUR = 1, TEL_CRUCIBLE = 2;
   var BRAD = Math.PI * 2 / 256;
 
@@ -33,6 +39,7 @@
     var map = null;
     var frame = null;
     var pops = [];
+    var shots = [];
     var draws = 0;
     var viewport = {
       w: config.viewportWidth || 960,
@@ -102,6 +109,33 @@
       if (pops.length > 40) pops.shift();
     }
 
+    function roleOf(index) {
+      if (!meta || !meta.names || !meta.names.roles) return 'dps';
+      return meta.names.roles[index] || 'dps';
+    }
+
+    function maxHpOf(index) {
+      return ROLE_HP[roleOf(index)] || 180;
+    }
+
+    function nearestAdd(x, y) {
+      if (!frame || !frame.adds || !frame.adds.length) return null;
+      var best = null;
+      var bestD = Infinity;
+      for (var i = 0; i < frame.adds.length; i++) {
+        var a = frame.adds[i];
+        var d = (a[1] - x) * (a[1] - x) + (a[2] - y) * (a[2] - y);
+        if (d < bestD) { bestD = d; best = a; }
+      }
+      return best;
+    }
+
+    function addShot(from, tx, ty, color, kind) {
+      shots.push({ x0: from[0], y0: from[1] - 16, x1: tx, y1: ty, color: color,
+        kind: kind, life: kind === 'heal' ? HEAL_LIFE : SHOT_LIFE });
+      if (shots.length > 40) shots.shift();
+    }
+
     function ingest(next) {
       var previous = frame;
       frame = next;
@@ -112,8 +146,102 @@
             addPop(next.cogs[i][0], next.cogs[i][1] - 14, '-' + lost, '#ff8a6a');
           }
         }
+        // Auto-attacks are deliberately not evented (docs/PROTOCOL.md); the
+        // per-tick meters are cumulative, so a rise between two ingested
+        // frames is a landed hit, and that is what the tracer shows.
+        if (next.mtr && previous.mtr) {
+          for (var j = 0; j < next.cogs.length && j < next.mtr.length &&
+              j < previous.mtr.length; j++) {
+            var c = next.cogs[j];
+            if (c[6] === 2) continue;
+            var role = roleOf(j);
+            if (next.mtr[j][0] > previous.mtr[j][0]) {
+              addShot(c, next.boss[0], next.boss[1], roleColor(j),
+                role === 'tank' ? 'melee' : 'shot');
+            }
+            if (next.mtr[j][1] > previous.mtr[j][1]) {
+              var add = nearestAdd(c[0], c[1]);
+              if (add) addShot(c, add[1], add[2], roleColor(j),
+                role === 'tank' ? 'melee' : 'shot');
+            }
+            if (role === 'healer' && next.mtr[j][2] > previous.mtr[j][2]) {
+              // The heal target is not in the frame either: it is whichever
+              // ally's bar went UP, since nothing else restores hit points.
+              for (var k = 0; k < next.cogs.length; k++) {
+                if (next.cogs[k][3] > previous.cogs[k][3]) {
+                  addShot(c, next.cogs[k][0], next.cogs[k][1] - 16,
+                    ROLE_COLORS.healer, 'heal');
+                }
+              }
+            }
+          }
+        }
       }
       draw();
+    }
+
+    function drawShots() {
+      for (var i = shots.length - 1; i >= 0; i--) {
+        var s = shots[i];
+        var full = s.kind === 'heal' ? HEAL_LIFE : SHOT_LIFE;
+        var a = clamp(s.life / full, 0, 1);
+        ctx.save();
+        ctx.globalAlpha = a;
+        ctx.strokeStyle = s.color;
+        ctx.lineCap = 'round';
+        if (s.kind === 'heal') {
+          ctx.lineWidth = 3;
+          ctx.setLineDash([6, 5]);
+          ctx.beginPath();
+          ctx.moveTo(s.x0, s.y0);
+          ctx.lineTo(s.x1, s.y1);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.fillStyle = s.color;
+          ctx.beginPath();
+          ctx.arc(s.x1, s.y1, 6 + (full - s.life), 0, Math.PI * 2);
+          ctx.globalAlpha = a * 0.5;
+          ctx.fill();
+        } else if (s.kind === 'melee') {
+          // a short swing at the target's edge rather than a tracer
+          var dx = s.x1 - s.x0, dy = s.y1 - s.y0;
+          var len = Math.sqrt(dx * dx + dy * dy) || 1;
+          var ex = s.x1 - dx / len * 30, ey = s.y1 - dy / len * 30;
+          ctx.lineWidth = 4;
+          ctx.beginPath();
+          ctx.moveTo(ex - dy / len * 12, ey + dx / len * 12);
+          ctx.lineTo(ex + dy / len * 12, ey - dx / len * 12);
+          ctx.stroke();
+        } else {
+          // tracer: a bright core with a soft halo, from the muzzle to the hit
+          ctx.lineWidth = 5;
+          ctx.globalAlpha = a * 0.35;
+          ctx.beginPath();
+          ctx.moveTo(s.x0, s.y0);
+          ctx.lineTo(s.x1, s.y1);
+          ctx.stroke();
+          ctx.globalAlpha = a;
+          ctx.lineWidth = 1.5;
+          ctx.strokeStyle = '#fff6e0';
+          ctx.beginPath();
+          ctx.moveTo(s.x0, s.y0);
+          ctx.lineTo(s.x1, s.y1);
+          ctx.stroke();
+          ctx.fillStyle = s.color;
+          ctx.beginPath();
+          ctx.arc(s.x1, s.y1, 4 + (full - s.life) * 1.5, 0, Math.PI * 2);
+          ctx.globalAlpha = a * 0.6;
+          ctx.fill();
+          ctx.fillStyle = '#fff6e0';
+          ctx.globalAlpha = a;
+          ctx.beginPath();
+          ctx.arc(s.x0, s.y0, 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+        s.life -= 1;
+        if (s.life <= 0) shots.splice(i, 1);
+      }
     }
 
     function drawFloor(t) {
@@ -300,15 +428,26 @@
           ctx.fillRect(c[0] - 6, c[1] - 6, 12, 12);
         }
         ctx.restore();
+        // health bar over the head, shield as a pale cap on top of it
+        var barW = 34, barH = 5;
+        var bx = c[0] - barW / 2, by = c[1] - 50;
+        var hpFrac = dead ? 0 : clamp(c[3] / maxHpOf(i), 0, 1);
+        ctx.fillStyle = '#000000b0';
+        ctx.fillRect(bx - 1, by - 1, barW + 2, barH + 2);
+        if (hpFrac > 0) {
+          ctx.fillStyle = hpFrac > 0.5 ? '#5fd36b'
+            : (hpFrac > 0.25 ? '#f2c14e' : '#ff5a3c');
+          ctx.fillRect(bx, by, barW * hpFrac, barH);
+        }
+        if (!dead && c[4] > 0) {
+          ctx.fillStyle = '#f2e8d8';
+          ctx.fillRect(bx, by - 2, barW * clamp(c[4] / 120, 0, 1), 2);
+        }
         // alias label: the board NEVER shows a real player name
         ctx.font = '11px "Courier New", monospace';
         ctx.textAlign = 'center';
         ctx.fillStyle = dead ? '#8d7a6a' : '#f2e8d8';
-        ctx.fillText(ALIASES[i] || ('#' + i), c[0], c[1] - 44);
-        if (c[4] > 0) {
-          ctx.fillStyle = '#f2e8d8cc';
-          ctx.fillRect(c[0] - 12, c[1] + 14, 24 * clamp(c[4] / 120, 0, 1), 3);
-        }
+        ctx.fillText(ALIASES[i] || ('#' + i), c[0], c[1] - 55);
       }
     }
 
@@ -366,6 +505,7 @@
       drawPillars();
       drawAdds();
       drawBoss();
+      drawShots();
       drawCogs();
       drawPops();
       ctx.restore();
@@ -413,7 +553,7 @@
       getPaceStats: function () {
         return { enabled: false, queued: 0, presented: draws, interval: 1000 / 24, draws: draws };
       },
-      stop: function () { pops = []; }
+      stop: function () { pops = []; shots = []; }
     };
   }
 
