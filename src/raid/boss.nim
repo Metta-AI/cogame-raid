@@ -177,6 +177,10 @@ proc resolveOverload*(sim: var Sim) =
     if sim.cogs[slot].alive:
       discard sim.damageCog(slot, damage, "overload", BossName)
   sim.healBoss(OverloadHeal)
+  ## One aggregate record on top of the five per-cog ones damageCog already
+  ## emitted: Overload is a single raid-wide event and the feed reads this to
+  ## say so in one line. `"raid"` is the only target string in the transcript
+  ## that is not a cog alias; docs/PROTOCOL.md says so.
   sim.record("boss_hit", %*{
     "target": "raid", "ability": "overload", "amount": damage,
     "absorbed": 0, "hp_left": sim.boss.hp

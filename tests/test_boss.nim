@@ -130,6 +130,23 @@ proc testOverload() =
     checkEq(cogHp[i] - world.cogs[i].hp, OverloadDamage,
       "all five take 70")
   checkEq(world.boss.overloadCd, OverloadCadence, "and it re-arms at 480")
+  ## Five per-cog records plus ONE aggregate, and the aggregate is the only
+  ## boss_hit in the transcript whose target is not a cog alias - which is
+  ## what docs/PROTOCOL.md promises a reader.
+  var aggregates, perCog = 0
+  for record in world.eventsOf("boss_hit"):
+    if record{"ability"}.getStr() != "overload":
+      continue
+    if record{"target"}.getStr() == "raid":
+      aggregates.inc
+      checkEq(record{"amount"}.getInt(), OverloadDamage,
+        "the aggregate carries the damage each cog took")
+    else:
+      perCog.inc
+      check(slotOfAlias(record{"target"}.getStr()) >= 0,
+        "every other Overload record names a cog alias")
+  checkEq(perCog, Seats, "one record per cog")
+  checkEq(aggregates, 1, "and exactly one raid-wide record")
   done("Overload resolves for 70 to all five and 400 back to the boss")
 
 proc testOverloadInterrupted() =

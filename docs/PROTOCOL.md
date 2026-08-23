@@ -262,7 +262,7 @@ Every record carries `t` (the tick) and `type`.
 | `adds_spawn` | `wave`, `ids`, `positions`, `alive_after` |
 | `add_death` | `id`, `killer`, `alive_after` |
 | `feed_buff` | `active`, `adds_alive` |
-| `boss_hit` | `target`, `ability`, `amount`, `absorbed`, `hp_left` |
+| `boss_hit` | `target`, `ability`, `amount`, `absorbed`, `hp_left` — `target` is a cog alias, except for the single aggregate record a resolved Overload adds after its five per-cog ones, where it is `"raid"` |
 | `boss_damaged` | `seat`, `alias`, `amount`, `boss_hp`, `boss_hp_pct` — only when a hit crosses a 5 % boss-HP boundary |
 | `pool_spawn` / `pool_expire` | `id`, `centre`, `radius` |
 | `death` | `alias`, `role`, `killer`, `elapsed_s`, `alive_left` |
