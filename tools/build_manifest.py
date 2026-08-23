@@ -348,12 +348,12 @@ def build():
             "cooperative", "pve", "boss-encounter", "heterogeneous-roles",
             "ad-hoc-teamwork", "llm-driven", "real-time", "five-player",
         ],
+        "episode_timeout_minutes": 20,
         "game": {
             "name": "raid",
             "replay_viewer": {"bundle": "static-replay-viewer"},
             "description": DESCRIPTION,
             "owner": "daveey@softmax.com",
-            "episode_timeout_minutes": 20,
             "runnable": {
                 "type": "game",
                 "image": "{{RAID_IMAGE}}",

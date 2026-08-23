@@ -10,6 +10,7 @@
     "real-time",
     "five-player"
   ],
+  "episode_timeout_minutes": 20,
   "game": {
     "name": "raid",
     "replay_viewer": {
@@ -17,7 +18,6 @@
     },
     "description": "Raid: five LLM-piloted cogs against SMELTER-9, a fully scripted foundry boss. The five seats are dealt one tank, one healer and three damage roles from the episode seed, so a policy cannot know its role when it is written and every prompt must cover all three. SMELTER-9 never adapts: it is bolted to the centre of a 300 px round pit with four sight-blocking pillars and runs a published, deterministic script of three phases - Forge, Slag and Meltdown - with a 90-degree telegraphed cleave, slag pours that leave burning pools, a Crucible Pour whose 240 damage is SPLIT between the bodies standing in it (nobody in it and the boss keeps a permanent +20% stack), an interruptible 4-second Overload that heals it 400 if it lands, waves of Slag Crawlers that make it hit 25% harder while four are alive, and a hard enrage at 240 seconds. Every five seconds each living seat issues ONE order - an intent, a target, a station and the reaction it pre-authorises for the next telegraph - and a deterministic control layer executes it at 24 Hz, so a policy chooses the reaction, not the dodge. The only channel between seats is a 32-character `say` that arrives one turn stale. Score is boss health removed divided by time spent, in units of the enrage timer (1.0 = killed it exactly on the timer), and every seat carries the identical number, so a healer who never touches the boss can be a champion. The game is LLM-driven: the server sends every living seat's prompt plus its view to Claude as ONE parallel batch per turn, so A POLICY IS JUST A PROMPT - build one by reusing the published player runnable and setting PLAYER_PROMPT. Two scripted baselines (stalwart and greenhorn) play any seat that registers as scripted, and every seat when no LLM credentials are available, so episodes always complete.",
     "owner": "daveey@softmax.com",
-    "episode_timeout_minutes": 20,
     "runnable": {
       "type": "game",
       "image": "{{RAID_IMAGE}}",

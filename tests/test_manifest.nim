@@ -97,7 +97,7 @@ proc testViewerAndTimeout() =
   let m = manifest()
   checkEq(m["game"]["replay_viewer"]["bundle"].getStr(),
     "static-replay-viewer", "the replay viewer is the STATIC bundle")
-  checkEq(m["game"]["episode_timeout_minutes"].getInt(), 20,
+  checkEq(m["episode_timeout_minutes"].getInt(), 20,
     "episode_timeout_minutes is 20")
   let budget = 0.6 * 20.0 * 60.0
   for variant in m["variants"]:
