@@ -156,10 +156,14 @@ proc finishEpisode(runtimeConfig: RuntimeConfig) =
     broadcastDone(results)
     refreshSnapshotLocked()
   echo "raid: writing results and replay (", replayData.len, " bytes)"
-  writeArtifact(runtimeConfig.resultsUri, $results, "application/json",
-    "COGAME_RESULTS_METHOD")
+  ## The REPLAY first, then the results: the hosted worker treats results.json
+  ## as the end of the episode and tears the pods down when it appears, so a
+  ## replay written after it can be lost. Same order as the starter
+  ## (`src/ctf/server.nim:1940-1956`).
   writeArtifact(runtimeConfig.replayUri, replayData, "application/json",
     "COGAME_SAVE_REPLAY_METHOD")
+  writeArtifact(runtimeConfig.resultsUri, $results, "application/json",
+    "COGAME_RESULTS_METHOD")
   if eventsPath.len > 0:
     try:
       writeFile(eventsPath, $gameSim.events.toJson())
