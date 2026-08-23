@@ -18,7 +18,10 @@ Orientation for coding agents. Gameplay rules live in
   `pools.nim`, `telegraphs.nim`, `abilities.nim`, `boss.nim`, `control.nim`,
   `orders.nim`, `baselines.nim`, `scoring.nim`, `sim.nim` (the step loop, which
   re-exports the rest), `replay.nim`, `broadcast.nim`, `engine.nim` (the turn
-  loop), `llm.nim`, `server.nim`, `labels.nim`, `events.nim`, `roster.nim`.
+  loop), `llm.nim`, `server.nim`, `labels.nim`, `events.nim`. The design note's
+  `roster.nim` and `render.nim` were never built: seat join, auth and slot
+  handling live in `server.nim`, and rendering lives in
+  `client/broadcast_core.js` and the wasm viewer.
 - `tests/` — every file is a standalone program; `tests/support/` holds the
   shared helpers so the `tests/*.nim` glob never runs one.
 
