@@ -240,3 +240,80 @@ jobs:
           path: dist/static-replay-viewer
           if-no-files-found: error
           retention-days: 14
+
+      # The wasm harness (tools/wasm_replay_smoke.cjs, driven by
+      # tests/test_viewer.nim) is the only thing that runs the EXACT emitted
+      # module: wasm32-only failures - integer overflow traps, address-space
+      # exhaustion, a stale export list - are invisible to the native 64-bit
+      # tests. The `test` job has no bundle, so its copy of that test returns
+      # early; this job is the only one that can run it, so it does.
+      - name: Stage the bundle where the viewer test looks for it
+        run: |
+          set -euo pipefail
+          rm -rf replay-viewer/dist
+          mkdir -p replay-viewer/dist
+          cp -R "$PWD/dist/static-replay-viewer/." replay-viewer/dist/
+          test -s replay-viewer/dist/raid_replay.js
+          test -s replay-viewer/dist/raid_replay.wasm
+
+      - name: Cache nimby toolchain and nimcache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.nimby
+            ~/.cache/nim
+          key: nimby-${{ runner.os }}-${{ env.NIMBY_VERSION }}-${{ env.NIM_VERSION }}-${{ hashFiles('nimby.lock') }}
+          restore-keys: |
+            nimby-${{ runner.os }}-${{ env.NIMBY_VERSION }}-${{ env.NIM_VERSION }}-
+
+      - name: Install nimby and Nim
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.local/bin"
+          arch="$(dpkg --print-architecture)"
+          case "$arch" in
+            amd64) asset="nimby-Linux-X64" ;;
+            arm64) asset="nimby-Linux-ARM64" ;;
+            *) echo "::error::unsupported runner arch: $arch"; exit 1 ;;
+          esac
+          curl -fsSL -o "$HOME/.local/bin/nimby" \
+            "https://github.com/treeform/nimby/releases/download/${NIMBY_VERSION}/${asset}"
+          chmod +x "$HOME/.local/bin/nimby"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.nimby/nim/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/nimby" use "$NIM_VERSION"
+
+      - name: Sync Nim dependencies
+        run: |
+          set -euo pipefail
+          if [ -f nimby.lock ]; then
+            nimby --global sync nimby.lock
+          else
+            echo "no nimby.lock in the repo; skipping dependency sync"
+          fi
+
+      - name: Regenerate nim.cfg from the synced package tree
+        run: |
+          set -euo pipefail
+          rm -f nim.cfg
+          for pkg in "$HOME"/.nimby/pkgs/*; do
+            [ -e "$pkg" ] || continue
+            if [ -d "$pkg/src" ]; then
+              echo "--path:\"$pkg/src\"" >> nim.cfg
+            else
+              echo "--path:\"$pkg\"" >> nim.cfg
+            fi
+          done
+          echo '--path:"src"' >> nim.cfg
+
+      - name: Run the viewer tests against the built bundle
+        run: |
+          set -euo pipefail
+          node --version
+          nim r --hints:off -d:release --path:src tests/test_viewer.nim \
+            2>&1 | tee /tmp/test_viewer.log
+          # The harness returns early when it finds no bundle, which would make
+          # this step green without ever loading the wasm. Prove it ran.
+          grep -q 'WASM-SMOKE OK' /tmp/test_viewer.log || {
+            echo "::error::tests/test_viewer.nim skipped the wasm harness"
+            exit 1; }
