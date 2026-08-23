@@ -127,7 +127,11 @@ proc testFreshInstanceAgrees() =
   done("a fresh instance agrees")
 
 proc testOneBitChangesTheDigest() =
-  ## Flip one control byte in a re-run and the final digest must move.
+  ## One different control byte must move the digest - that is what makes the
+  ## replay's byte-for-byte control comparison worth making. A control byte is
+  ## compiled, never written by hand, so the only honest way to change one is
+  ## to give a seat a different order mid-run; the test then checks the two
+  ## streams really are identical before that tick and different after it.
   let config = testConfig(maxTicks = 1200, enrage = 960)
   var baseline = newWorld(config)
   var flipped = newWorld(config)
@@ -139,9 +143,20 @@ proc testOneBitChangesTheDigest() =
   flipped.setOrder(2, Order(intent: inBurnBoss, target: "boss",
     station: stEdge, onTelegraph: rxDodge))
   flipped.runTicks(120)
+  checkEq(baseline.controls.len, flipped.controls.len,
+    "both runs recorded 240 ticks of controls")
+  let beforeChange = 120 * Seats * 4      ## 4 bytes per cog per tick
+  checkEq(baseline.controls[0 ..< beforeChange],
+    flipped.controls[0 ..< beforeChange],
+    "byte-identical up to the tick the order changed")
+  var differing = 0
+  for i in beforeChange ..< baseline.controls.len:
+    if baseline.controls[i] != flipped.controls[i]:
+      differing.inc
+  check(differing > 0, "and the control stream diverges after it")
   check(baseline.raidStateDigest() != flipped.raidStateDigest(),
     "one different control byte moves the digest")
-  done("a one-bit control change moves the digest")
+  done("a one-byte control change moves the digest")
 
 proc testGoldenFixture() =
   ## tests/fixtures/golden_digests.json pins the digests for seed 42 over the

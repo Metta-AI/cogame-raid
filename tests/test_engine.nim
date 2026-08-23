@@ -16,8 +16,6 @@ type
     clock: int
     windows: seq[Window]
     batches: seq[int]
-    hangSeconds: float
-    attemptSeconds: float
 
 proc decideAll(client: FakeClient, world: Sim, seats: seq[int]):
     seq[Decision] =
@@ -159,6 +157,44 @@ proc testEncounterEndsWithoutADecider() =
     checkEq(record{"source"}.getStr(), "scripted", "on the scripted layer")
   done("with no LLM at all the encounter still completes")
 
+proc testHungClientKeepsTheEpisodeInsideItsBudget() =
+  ## A client that hangs answers only when its deadline expires, so every turn
+  ## costs the whole budget: the effective attempt plus the effective retry.
+  ## The episode still has to settle and score inside wallClockBudgetSeconds -
+  ## the budget guard drops to the scripted layer before the wall clock can
+  ## run out, and the encounter ends complete/*, never deadline/*.
+  var world = newWorld(testConfig())     ## the default variant, 54 turns
+  let perTurn = float(deadlineSeconds(world.config.llmAttemptSeconds) +
+    deadlineSeconds(world.config.llmRetrySeconds))
+  checkEq(perTurn, world.config.turnBudgetSeconds,
+    "a hung turn costs the whole 10 s budget")
+  var elapsed = 0.0
+  var hungTurns = 0
+  let decide: Decider = proc (view: Sim, seats: seq[int]): seq[Decision] =
+    ## Hangs to its deadline, then falls back, exactly as decideAll does when
+    ## both attempts time out.
+    hungTurns.inc
+    elapsed += perTurn
+    for seat in seats:
+      result.add(Decision(order: scriptedOrder(view, seat, skStalwart),
+        source: osFallback, attempts: 2, cause: fcTimeout,
+        detail: "llm transport: Timeout was reached"))
+  let clock: Clock = proc (): float = elapsed
+  runEncounter(world, decide, clock, @[], nil)
+  check(hungTurns > 0, "the hung client was actually queried")
+  checkEq(world.reason, "complete",
+    "the episode settles rather than hitting the wall-clock stop")
+  check(elapsed <= world.config.wallClockBudgetSeconds,
+    "inside the wall-clock budget (" & $elapsed & "s of " &
+      $world.config.wallClockBudgetSeconds & "s)")
+  check(hungTurns <= world.config.maxTicks div world.config.turnTicks,
+    "having queried the client at most once per turn")
+  checkEq(elapsed, float(hungTurns) * perTurn,
+    "with every one of those turns costing the full deadline")
+  let results = resultsJson(world)
+  check(results["scores"][0].getFloat() >= 0.0, "and the episode is scored")
+  done("a hung client cannot push the episode past its budget")
+
 proc testEffectiveDeadlinesFitTheTurnBudget() =
   ## The LLM deadlines are handed to curl, whose timeout is WHOLE seconds, so
   ## the configured 6.5 s first attempt really waits 7 s. The budget check has
@@ -188,5 +224,6 @@ when isMainModule:
   testSimFault()
   testEveryTurnRecordsOrders()
   testEncounterEndsWithoutADecider()
+  testHungClientKeepsTheEpisodeInsideItsBudget()
   testEffectiveDeadlinesFitTheTurnBudget()
   echo "test_engine: the turn loop, its budgets and its fault paths check out"
