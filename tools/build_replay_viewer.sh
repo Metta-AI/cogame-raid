@@ -21,6 +21,10 @@ if [[ "$(basename "${requested_output}")" != "static-replay-viewer" ]]; then
   echo "unsafe bundle output: ${requested_output}" >&2
   exit 1
 fi
+# `coworld build` hands an absolute path whose parent it has already made,
+# but CI asks for $PWD/dist/static-replay-viewer on a clean checkout, so make
+# the parent before resolving it.
+mkdir -p "$(dirname "${requested_output}")"
 output_parent="$(cd "$(dirname "${requested_output}")" && pwd -P)"
 output_dir="${output_parent}/static-replay-viewer"
 if [[ -L "${output_dir}" ]]; then
