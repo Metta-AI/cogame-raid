@@ -5,8 +5,9 @@ Committed so the assets are reproducible rather than mysterious, in the same
 spirit as paintbot's scripts/art/*.py. Everything is painted procedurally from
 a foundry palette: scorched stone with a cast-iron rim for the floor, a
 smelter-golem rig with a glowing crucible chest for SMELTER-9, a chitinous
-crawler, three role-coloured cog rigs, a slag pool decal, a telegraph ring and
-a riveted pillar face.
+crawler, a slag pool decal, a telegraph ring and
+a riveted pillar face. The three role cogs are NOT generated here: they are
+nano-banana (Gemini) renders, see split_cog_sheet.py.
 
     python3 scripts/art/gen_raid_art.py [outdir]
 
@@ -240,9 +241,10 @@ def main():
     floor_foundry(os.path.join(outdir, "floor_foundry.jpg"))
     boss_smelter(os.path.join(outdir, "boss_smelter.png"))
     add_crawler(os.path.join(outdir, "add_crawler.png"))
-    cog(os.path.join(outdir, "cog_tank.png"), PALETTE["tank"], "pauldron")
-    cog(os.path.join(outdir, "cog_healer.png"), PALETTE["healer"], "canister")
-    cog(os.path.join(outdir, "cog_dps.png"), PALETTE["dps"], "blade")
+    # cog_tank/healer/dps.png are nano-banana renders of the Softmax cog,
+    # produced by scripts/art/split_cog_sheet.py from source/cogs_sheet.png;
+    # cog() below is kept only as the procedural fallback:
+    #   cog(path, PALETTE["tank"], "pauldron") etc.
     pool_decal(os.path.join(outdir, "pool.png"))
     telegraph_ring(os.path.join(outdir, "telegraph_ring.png"))
     pillar(os.path.join(outdir, "pillar.png"))

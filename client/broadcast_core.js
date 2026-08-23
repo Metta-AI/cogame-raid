@@ -277,33 +277,34 @@
           : (role === 'healer' ? art.cogHealer : art.cogDps);
         ctx.save();
         if (dead) ctx.globalAlpha = 0.35;
-        if (sprite) {
-          ctx.drawImage(sprite, c[0] - 14, c[1] - 18, 28, 28);
-        } else {
-          ctx.fillStyle = roleColor(i);
-          ctx.fillRect(c[0] - 6, c[1] - 6, 12, 12);
-        }
-        // role tint ring
+        // role tint: a ground ring under the wheels, so it never covers the kit
         ctx.strokeStyle = roleColor(i);
         ctx.lineWidth = 2.5;
         ctx.beginPath();
-        ctx.arc(c[0], c[1], 11, 0, Math.PI * 2);
+        ctx.ellipse(c[0], c[1] + 4, 14, 7, 0, 0, Math.PI * 2);
         ctx.stroke();
         if (!dead) {
           ctx.strokeStyle = '#f2e8d8aa';
           ctx.lineWidth = 2;
           ctx.beginPath();
-          ctx.moveTo(c[0], c[1]);
-          ctx.lineTo(c[0] + Math.cos(c[2] * BRAD) * 17,
-            c[1] - Math.sin(c[2] * BRAD) * 17);
+          ctx.moveTo(c[0], c[1] + 4);
+          ctx.lineTo(c[0] + Math.cos(c[2] * BRAD) * 20,
+            c[1] + 4 - Math.sin(c[2] * BRAD) * 10);
           ctx.stroke();
+        }
+        if (sprite) {
+          // the cog stands on (x, y): the sprite's feet sit on the ground ring
+          ctx.drawImage(sprite, c[0] - 24, c[1] - 40, 48, 48);
+        } else {
+          ctx.fillStyle = roleColor(i);
+          ctx.fillRect(c[0] - 6, c[1] - 6, 12, 12);
         }
         ctx.restore();
         // alias label: the board NEVER shows a real player name
         ctx.font = '11px "Courier New", monospace';
         ctx.textAlign = 'center';
         ctx.fillStyle = dead ? '#8d7a6a' : '#f2e8d8';
-        ctx.fillText(ALIASES[i] || ('#' + i), c[0], c[1] - 22);
+        ctx.fillText(ALIASES[i] || ('#' + i), c[0], c[1] - 44);
         if (c[4] > 0) {
           ctx.fillStyle = '#f2e8d8cc';
           ctx.fillRect(c[0] - 12, c[1] + 14, 24 * clamp(c[4] / 120, 0, 1), 3);
