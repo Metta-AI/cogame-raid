@@ -429,7 +429,16 @@ def build():
                 "playerConnectTimeoutSeconds": 60,
                 "mapPath": "foundry",
             },
-            "players": [{"player_id": "baseline"} for _ in range(SEATS)],
+            "players": [
+                # Certification's players-run step requires every declared
+                # player entry to occupy a slot. Tank and healer stay on the
+                # strong baseline so the fixture still reaches a kill.
+                {"player_id": "baseline"},
+                {"player_id": "baseline"},
+                {"player_id": "baseline"},
+                {"player_id": "greenhorn"},
+                {"player_id": "raid-player"},
+            ],
         },
     }
 

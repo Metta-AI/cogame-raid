@@ -29,6 +29,12 @@ proc testSeatCountEverywhere() =
   for seat in cert["players"]:
     check(seat["player_id"].getStr() in ids,
       "every certification seat names a declared player")
+  ## Certification's players-run step fails a declared player that never got
+  ## a slot, so the fixture has to seat all of them.
+  var seated: HashSet[string]
+  for seat in cert["players"]:
+    seated.incl(seat["player_id"].getStr())
+  checkEq(seated, ids, "and every declared player has a certification slot")
   done("num_agents is 5 in every variant and the certification fixture")
 
 proc testResultsSchemaMatchesTheCode() =
