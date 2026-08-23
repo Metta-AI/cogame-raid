@@ -225,7 +225,9 @@ add id.
    `t mod 24 == 0` the healer gains 30 mana (cap 1200).
 8. **Player abilities**, in this fixed sub-order so races are decidable:
    (a) interrupt (seat order; lowest slot wins a tie), (b) taunt, (c) shield,
-   (d) heal completion, (e) attacks (seat order).
+   (d) heal completion, (e) attacks (seat order), (f) heal cast starts (seat
+   order). Starting a cast is last, so a cast begun on tick `t` first ages on
+   `t + 1` and lands exactly 24 ticks later.
 9. **Threat.** This tick's damage and healing fold into the threat table.
 10. **Boss retarget** on `t mod 24 == 0`, not while a taunt lock is live.
 11. **Boss scheduling.** A finished Overload lands; then, if no cast or telegraph
