@@ -1,0 +1,7 @@
+services:
+  raid:
+    image: coworld-raid:latest
+    platform: linux/amd64
+    build:
+      context: .
+      network: host

@@ -1,0 +1,729 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Metta-AI/coworld/main/src/coworld/coworld_manifest_schema.json",
+  "tags": [
+    "cooperative",
+    "pve",
+    "boss-encounter",
+    "heterogeneous-roles",
+    "ad-hoc-teamwork",
+    "llm-driven",
+    "real-time",
+    "five-player"
+  ],
+  "game": {
+    "name": "raid",
+    "replay_viewer": {
+      "bundle": "static-replay-viewer"
+    },
+    "description": "Raid: five LLM-piloted cogs against SMELTER-9, a fully scripted foundry boss. The five seats are dealt one tank, one healer and three damage roles from the episode seed, so a policy cannot know its role when it is written and every prompt must cover all three. SMELTER-9 never adapts: it is bolted to the centre of a 300 px round pit with four sight-blocking pillars and runs a published, deterministic script of three phases - Forge, Slag and Meltdown - with a 90-degree telegraphed cleave, slag pours that leave burning pools, a Crucible Pour whose 240 damage is SPLIT between the bodies standing in it (nobody in it and the boss keeps a permanent +20% stack), an interruptible 4-second Overload that heals it 400 if it lands, waves of Slag Crawlers that make it hit 25% harder while four are alive, and a hard enrage at 240 seconds. Every five seconds each living seat issues ONE order - an intent, a target, a station and the reaction it pre-authorises for the next telegraph - and a deterministic control layer executes it at 24 Hz, so a policy chooses the reaction, not the dodge. The only channel between seats is a 32-character `say` that arrives one turn stale. Score is boss health removed divided by time spent, in units of the enrage timer (1.0 = killed it exactly on the timer), and every seat carries the identical number, so a healer who never touches the boss can be a champion. The game is LLM-driven: the server sends every living seat's prompt plus its view to Claude as ONE parallel batch per turn, so A POLICY IS JUST A PROMPT - build one by reusing the published player runnable and setting PLAYER_PROMPT. Two scripted baselines (stalwart and greenhorn) play any seat that registers as scripted, and every seat when no LLM credentials are available, so episodes always complete.",
+    "owner": "daveey@softmax.com",
+    "episode_timeout_minutes": 20,
+    "runnable": {
+      "type": "game",
+      "image": "{{GAME_IMAGE}}",
+      "run": [
+        "/bin/raid"
+      ],
+      "env": {
+        "ANTHROPIC_API_KEY_URI": "secret://coworld/raid/anthropic_api_key"
+      },
+      "source_url": "https://github.com/Metta-AI/cogame-raid/tree/main"
+    },
+    "config_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tokens",
+        "players"
+      ],
+      "properties": {
+        "tokens": {
+          "description": "One connection token per player slot, indexed by slot.",
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "players": {
+          "description": "One player display-name object per seat, indexed by slot.",
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "num_agents": {
+          "description": "Seat count; injected by the commissioner. Raid is a five-cog encounter.",
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 5,
+          "default": 5
+        },
+        "seed": {
+          "description": "Pins the role deal and the pour target draws. Omit for a fresh random seed per episode.",
+          "type": "integer"
+        },
+        "roles": {
+          "description": "Optional explicit role deal, exactly five of tank/healer/dps. Omit to deal from the seed.",
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "type": "string",
+            "enum": [
+              "tank",
+              "healer",
+              "dps"
+            ]
+          }
+        },
+        "turnTicks": {
+          "description": "Ticks per decision turn at 24 ticks per second.",
+          "type": "integer",
+          "minimum": 24,
+          "maximum": 600,
+          "default": 120
+        },
+        "enrageTicks": {
+          "description": "Tick at which SMELTER-9 enrages: triple damage, permanent.",
+          "type": "integer",
+          "minimum": 240,
+          "maximum": 20000,
+          "default": 5760
+        },
+        "maxTicks": {
+          "description": "Hard end of the pull. Must be at least enrageTicks.",
+          "type": "integer",
+          "minimum": 240,
+          "maximum": 24000,
+          "default": 6480
+        },
+        "bossMaxHp": {
+          "description": "SMELTER-9's health pool.",
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 200000,
+          "default": 26000
+        },
+        "turnBudgetSeconds": {
+          "description": "Outer per-turn deadline for the whole parallel decision batch.",
+          "type": "number",
+          "minimum": 1,
+          "maximum": 60,
+          "default": 10
+        },
+        "wallClockBudgetSeconds": {
+          "description": "Engine hard stop. Must stay inside 60% of episodeTimeoutSeconds; the budget guard settles the encounter on the scripted layer well before it.",
+          "type": "number",
+          "minimum": 30,
+          "maximum": 720,
+          "default": 660
+        },
+        "episodeTimeoutSeconds": {
+          "description": "Wall clock the game assumes the platform allows when COWORLD_TIMEOUT_SECONDS is not in its environment.",
+          "type": "integer",
+          "minimum": 60,
+          "maximum": 6000,
+          "default": 1200
+        },
+        "playerConnectTimeoutSeconds": {
+          "description": "Bounded wait for the five player containers to connect.",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 600,
+          "default": 90
+        },
+        "mapPath": {
+          "description": "Authored map spec name under data/. Raid ships one floor.",
+          "type": "string",
+          "default": "foundry"
+        },
+        "model": {
+          "description": "Claude model that drives every LLM seat.",
+          "type": "string",
+          "default": "claude-sonnet-5"
+        },
+        "maxOutputTokens": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 2000,
+          "default": 900
+        },
+        "llmAttemptSeconds": {
+          "description": "First-attempt per-seat deadline. llmAttemptSeconds + llmRetrySeconds must be <= turnBudgetSeconds; asserted at config load.",
+          "type": "number",
+          "minimum": 1,
+          "maximum": 60,
+          "default": 6.5
+        },
+        "llmRetrySeconds": {
+          "description": "Deadline for the single retry that carries the invalid-reply hint.",
+          "type": "number",
+          "minimum": 1,
+          "maximum": 60,
+          "default": 3.0
+        },
+        "showPlayerLabels": {
+          "description": "Whether the spectator chrome renders real policy names beside the aliases.",
+          "type": "boolean",
+          "default": true
+        },
+        "gameOverTicks": {
+          "description": "Endcard hold, in ticks, for the broadcast viewer.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 600,
+          "default": 96
+        }
+      }
+    },
+    "results_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "names",
+        "aliases",
+        "roles",
+        "policy_kinds",
+        "scores",
+        "boss_hp_removed",
+        "boss_max_hp",
+        "boss_hp_removed_frac",
+        "elapsed_seconds",
+        "charged_seconds",
+        "enrage_seconds",
+        "phase_reached",
+        "kill",
+        "wipe",
+        "deaths",
+        "alive_at_end",
+        "damage_to_boss",
+        "damage_to_adds",
+        "healing_done",
+        "overhealing",
+        "damage_taken",
+        "avoidable_hits",
+        "interrupts_landed",
+        "interrupts_wasted",
+        "overloads_resolved",
+        "adds_killed",
+        "spill_stacks",
+        "reason",
+        "end_rule",
+        "final_tick",
+        "final_turn",
+        "seed",
+        "llm_turns",
+        "fallback_turns",
+        "fallback_causes"
+      ],
+      "properties": {
+        "names": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "type": "string"
+          },
+          "description": "Policy display names by slot. Seats play under anonymous cog aliases in-game; results attribute by policy name."
+        },
+        "aliases": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "type": "string"
+          },
+          "description": "Alpha..Echo, by slot."
+        },
+        "roles": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "type": "string"
+          },
+          "description": "The role each seat was dealt: tank, healer or dps."
+        },
+        "policy_kinds": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "type": "string"
+          },
+          "description": "llm or scripted, by slot."
+        },
+        "scores": {
+          "description": "Boss health removed divided by time spent, in units of the enrage timer. Identical for all five seats: shared equally. Higher is better.",
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "boss_hp_removed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "boss_max_hp": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "boss_hp_removed_frac": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "elapsed_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "charged_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "enrage_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "phase_reached": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        },
+        "kill": {
+          "type": "boolean"
+        },
+        "wipe": {
+          "type": "boolean"
+        },
+        "deaths": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "alive_at_end": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "damage_to_boss": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "damage_to_adds": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "healing_done": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "overhealing": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "damage_taken": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "avoidable_hits": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "interrupts_landed": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "interrupts_wasted": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "overloads_resolved": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "adds_killed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "spill_stacks": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        },
+        "reason": {
+          "description": "complete, deadline (the hosted LLM was slow; the replay is complete up to the stop tick) or fault.",
+          "type": "string",
+          "enum": [
+            "complete",
+            "deadline",
+            "fault"
+          ]
+        },
+        "end_rule": {
+          "description": "The detail behind `reason`.",
+          "type": "string",
+          "enum": [
+            "kill",
+            "wipe",
+            "enrage_timeout",
+            "wall_clock",
+            "sim_fault",
+            "host_error"
+          ]
+        },
+        "final_tick": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "final_turn": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "seed": {
+          "type": "integer"
+        },
+        "llm_turns": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "fallback_turns": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "fallback_causes": {
+          "description": "Per seat, how many turns fell back and why.",
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "timeout",
+              "parse_error",
+              "transport_error",
+              "no_credentials",
+              "budget_guard"
+            ],
+            "properties": {
+              "timeout": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "parse_error": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "transport_error": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "no_credentials": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "budget_guard": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    "protocols": {
+      "player": {
+        "type": "text",
+        "value": "raid.player.v1 - JSON text frames over the websocket named by COWORLD_PLAYER_WS_URL (already carrying ?slot=N&token=T). A raid policy is a prompt: the player container's only job is to deliver it, because every decision is made inside the game server, which sends each living seat's prompt plus its view to Claude as ONE parallel batch every five seconds. player->game, exactly once on connect: {\"type\":\"register\",\"prompt\":str,\"scripted\":\"stalwart\"|\"greenhorn\"|null,\"policy\":str}. `prompt` is capped at 4000 runes at the transport and is never written to the replay or the results; a seat that registers with neither field, or never registers at all, plays the stalwart baseline and the no-show is reported to COGAME_PLAYER_FAILURE_URI. game->player: {\"type\":\"welcome\",\"protocol\":\"raid.player.v1\",\"slot\":N,\"alias\":\"Alpha\"..\"Echo\",\"turn_seconds\":5.0} on connect; {\"type\":\"turn\",\"turn\":int,\"tick\":int,\"phase\":1|2|3,\"role\":\"tank\"|\"healer\"|\"dps\",\"view\":{...},\"order_source\":\"llm\"|\"scripted\"|\"fallback\"} once per decision turn - informational, the seat is not required to answer; and {\"done\":true,\"result\":{...the results document...}} at the end, bounded at 3.0 s per seat, after which the player should exit. The view carries turn/of/tick/phase/phase_name, clock{elapsed_s,enrage_in_s,hard_end_in_s}, you{alias,role,pos,alive,hp,max_hp,shield,threat,attacking,cooldowns_s,(mana,max_mana for a healer),(casting)}, boss{name,pos,facing_brads,hp,max_hp,hp_pct,phase,target,enraged,buffs{feed,spill_stacks},(casting),next_s{cleave,pour,overload,adds}}, telegraphs[], raid[5], adds[], pools[], callouts[] (the other seats' 32-rune `say` strings from the PREVIOUS turn - the raid's only channel), meters{damage_to_boss,healing_done} and your_last_order. Hidden from every seat: the seed, other seats' private notes and full orders, the next pour draw, every PLAYER_PROMPT, and the real player names behind the aliases. The order object a policy is asked for is {\"intent\":str,\"target\":str|null,\"station\":\"melee\"|\"ranged\"|\"spread\"|\"edge\"|\"point\"|\"soak\",\"point\":[x,y],\"on_telegraph\":\"dodge\"|\"hold\"|\"soak\"|\"spread\",\"note\":<=160 runes,\"say\":<=32 runes}; intents are role-gated (tank: tank_boss taunt pick_up_adds kite soak wait; healer: heal_lowest heal_target shield_target conserve soak wait; dps: burn_boss kill_adds interrupt assist_target soak wait) and anything illegal is repaired against the world rather than rejected. Every recorded string is truncated on RUNE boundaries."
+      },
+      "global": {
+        "type": "text",
+        "value": "raid.global.v1 - spectators connect a websocket to /global and receive the whole snapshot as JSON after every decision turn and at the end: {\"type\":\"state\",\"game\":\"raid\",\"protocol\":\"raid.global.v1\",\"tick\":int,\"turn\":int,\"ticks_per_second\":24,\"phase\":1|2|3,\"phase_name\":str,\"seats\":[{slot,alias,name,policy_kind,role,pos,aim,alive,hp,max_hp,shield,mana,threat,attacking,intent,note,say,source,damage_to_boss,healing_done,damage_taken,avoidable_hits,connected} x5],\"boss\":{name,pos,aim,hp,max_hp,hp_pct,target,enraged,feed,spill_stacks,casting,cast_remaining,cast_total},\"adds\":[{id,pos,hp}],\"pools\":[{id,centre,radius,age}],\"telegraphs\":[{id,kind,centre,radius,facing_brads,half_angle_brads,reach,fuse,soak_needed}],\"enrage_in_s\":float,\"hard_end_in_s\":float,\"events\":[...the append-only transcript...],\"done\":bool,\"reason\":str,\"end_rule\":str,\"score\":float}. Real policy names appear here, in the replay and in the results - never in a seat's view. The recorded replay is raid.replay.v1: strict UTF-8 JSON carrying protocol, format_version, game_version, seed, the fully resolved config, the map spec inlined verbatim, names (players/aliases/roles/policy_kinds/colors), ticks_per_second, turn_ticks, tick_count, the phase table, controls_b64 (tick_count x 5 x 4 bytes of (move_x,move_y,aim_turn,action)), one keyframe per second with an FNV-1a state digest, the event transcript and the results. seed + map + config + the recorded order events reproduce the encounter exactly, which is what the STATIC wasm replay bundle does in the browser - it contacts nothing but the S3 URL it was given, and validates itself against the keyframe digests. /client/replay serves the same page off the identical bundle for local viewing."
+      }
+    },
+    "docs": {
+      "readme": {
+        "type": "text",
+        "value": "# raid — five strangers versus one scripted boss\n\n**A policy is just a prompt.** Five cogs who have never met are dealt a tank, a\nhealer and three damage roles and thrown at **SMELTER-9**, a fully scripted\nfoundry boss with three authored phases, telegraphed floor mechanics, adds, an\ninterruptible cast and a hard enrage timer. The opponent never varies; the only\nvariable is how well five strangers coordinate.\n\nScore is boss health removed ÷ time spent, in units of the enrage timer —\n**1.0 means \"killed it exactly on the 240-second timer\"** — and every seat\ncarries the identical number, so a healer who never touches the boss can be a\nchampion.\n\n* Rules, every number: [`docs/RULES.md`](docs/RULES.md)\n* Wire protocol, schemas and the event vocabulary:\n  [`docs/PROTOCOL.md`](docs/PROTOCOL.md)\n* Design note: [`docs/plans/2026-08-23-raid-design.md`](docs/plans/2026-08-23-raid-design.md)\n\n## The encounter in one screen\n\nSMELTER-9 is bolted to the centre of a 300 px round pit with four sight-blocking\npillars. It swings at its highest-threat cog every 1.5 s, and:\n\n- **Cleave** — a 90° cone 180 px in front of it, telegraphed 2 s. Only the tank\n  should be in it, and its facing is FROZEN for the whole telegraph, so a\n  side-step works.\n- **Slag Pour** — a 90 px circle dropped on a random non-tank, telegraphed\n  2.5 s, leaving a burning pool for 10 s.\n- **Crucible Pour** (phase 3) — a 110 px circle telegraphed 3 s carrying 240\n  damage **split between everyone standing in it**. One dps alone dies; two eat\n  it cheaply; nobody at all and the boss keeps a permanent +20 % damage stack.\n- **Overload** (phases 2–3) — a 4 s cast that hits all five for 70 and heals the\n  boss 400 unless ONE dps interrupts it. Two interrupts on the same cast wastes\n  one, so the raid has to actually assign the job.\n- **Slag Crawlers** — pairs of adds through phase 2; at four or more alive the\n  boss deals +25 % more damage.\n\nAt 240 s it **enrages** (triple damage) and the pull is hard-stopped at 270 s.\n\n## A policy is a prompt\n\nEvery five seconds each living seat issues **one order** — an intent, a target,\na station, a point and, crucially, the reaction it pre-authorises for the next\ntelegraph — and a deterministic control layer executes it at 24 Hz. You do not\ndrive motors; you choose the reaction, not the dodge.\n\n```json\n{\"intent\": \"heal_target\", \"target\": \"Alpha\", \"station\": \"ranged\",\n \"point\": [742, 402], \"on_telegraph\": \"dodge\",\n \"note\": \"tank is eating cleave plus feed; topping it\",\n \"say\": \"tank heals, dodge pours\"}\n```\n\nField your own policy by reusing the published player runnable with a different\n`PLAYER_PROMPT`:\n\n```bash\ncoworld upload-policy coworld-raid:latest --name my-raid \\\n  --run /bin/raid-player \\\n  --secret-env PLAYER_PROMPT=\"<your strategy for all three roles>\"\n```\n\nYour role is **dealt** each episode, so a prompt has to cover tank, healer and\ndps. Your only channel to the other four is `say` — 32 characters, public, and\none turn stale.\n\nDecisions are made in the **game server**, which sends every living seat's\nprompt plus its view to Claude as **one parallel batch per turn**. With no LLM\ncredentials at all the server plays the built-in `stalwart` baseline for every\nseat, so offline certification always completes.\n\n## Two scripted baselines\n\nBoth are fieldable policies and both play through exactly the same control\nlayer as an LLM seat, so they are directly comparable.\n\n- **`stalwart`** — the certification player and the default: the tank holds the\n  boss north of the stand so the cone points at empty floor, the healer triages\n  by missing hit points from a pool-free stand, one dps owns the Overload\n  interrupt for the whole fight, the rest clear crawlers, and in Meltdown the\n  raid stacks so a crucible splits three ways.\n- **`greenhorn`** — deliberately weaker and different in shape: everyone stands\n  in melee, everyone dodges everything (so the tank walks its own cleave across\n  the raid), nobody interrupts, nobody soaks, adds are ignored. A clean floor for\n  the ladder.\n\n```bash\nPLAYER_SCRIPTED=stalwart   /bin/raid-player\nPLAYER_SCRIPTED=greenhorn  /bin/raid-player\n```\n\n## Watching\n\nThe replay is a **static wasm bundle**, never a pod: the browser re-derives\nevery frame from `seed` + `map` + `config` + the recorded orders with the same\nNim sim the server runs, and checks itself against the per-second state digests\nin the replay. The chrome is paintbot's, with a boss health bar carrying phase\nticks at 70 % and 35 %, five role nameplates, telegraphed AoE decals that fill\nfrom the edge inward as the fuse burns, an enrage clock, an Overload cast bar\nwith the interrupt prompt, and a damage/healing endcard.\n\n## Building\n\n```bash\nnimby use 2.2.4 && nimby --global sync nimby.lock\nnim c -d:release --out:raid src/raid.nim\nnim c -d:release --out:raid-player src/raid_player.nim\nnim r --path:src tests/test_boss.nim        # any tests/*.nim, standalone\n./tools/ci/docker_smoke.sh coworld-raid:ci  # one real episode in raw docker\n./tools/build_replay_viewer.sh \"$PWD/dist/static-replay-viewer\"\npython3 scripts/art/gen_raid_art.py data/art\npython3 tools/build_manifest.py             # regenerates the manifest template\n```\n\nThe committed `nim.cfg` is host-specific and gitignored; regenerate it from\n`~/.nimby/pkgs` exactly as the Dockerfile does.\n\nMIT licensed.\n"
+      },
+      "pages": [
+        {
+          "id": "rules.md",
+          "title": "Rules",
+          "content": {
+            "type": "text",
+            "value": "# SMELTER-9 — the full boss script\n\nRaid is five cogs against one scripted boss in a round foundry pit, on a\n240-second enrage clock. Slots are dealt one tank, one healer and three dps.\nThe boss never adapts: it runs this published, deterministic script. Everything\nthe raid can do wrong — standing in the cleave, letting a pour go unsoaked,\nmissing the Overload interrupt, leaving adds alive, letting the tank die — is a\ncoordination failure between five policies that have never met.\n\n## Seats and roles\n\n- **`num_agents` = 5.** One seat = one cog. Slots 0–4 map to the aliases\n  `Alpha`, `Bravo`, `Charlie`, `Delta`, `Echo`. Those are the only names a\n  prompt or an observation ever contains.\n- **Roles are dealt.** At episode start the sim shuffles\n  `[\"tank\", \"healer\", \"dps\", \"dps\", \"dps\"]` with a Fisher–Yates pass driven by\n  the episode PCG32 stream and assigns the result to slots 0–4. The optional\n  config key `roles` (exactly five role strings) overrides the deal outright —\n  used by the certification fixture and by every test. A seat learns its role\n  in its first observation and it never changes, so **a policy prompt must\n  cover all three roles.**\n- The boss is `SMELTER-9`; adds are `A1`…`A8` in spawn order.\n\n## The arena\n\n- Floor 1235 × 659 px, origin top-left, +x right, +y down. Everything outside a\n  disc of **radius 300 px centred on (617, 329)** is solid wall. The pit is the\n  whole game.\n- **Four solid 40 × 40 pillars** centred at (511, 223) (723, 223) (511, 435)\n  (723, 435). They block movement **and line of sight** — a ranged attack, an\n  interrupt and a heal all need a clear line — but they do **not** block cleaves\n  or pours, which are floor effects. Hiding behind a pillar stops you being\n  healed; that is the point.\n- **Boss stand** at (617, 329), a 56 × 56 body. It is solid to cogs and adds and\n  transparent to sight.\n- **Cog spawns**, slot-ascending, on the south arc: (497,545) (557,561)\n  (617,567) (677,561) (737,545).\n- **Add alcoves** on the rim at radius 280: (419,131) (815,131) (419,527)\n  (815,527).\n- **No fog of war.** Every seat sees the whole pit, every cog, the boss, every\n  add, every pool and every live telegraph.\n\n## Bodies and motion\n\n| | value |\n|---|---|\n| cog half-extent | 6 px (12 × 12 footprint) |\n| sub-pixel motion scale | 256 |\n| acceleration | 76 per tick, scaled by \\|move\\|/100 per axis |\n| friction | ×144/256 on an axis with no input |\n| stop threshold | 8 |\n| max speed | **832** (3.25 px/tick ≈ 78 px/s) |\n| cog–cog restitution | 40 % |\n| wall slide scan | 3 px |\n| aim | brads, 256 per turn, 0 = east, counter-clockwise; ≤ 8 brads/tick |\n\nThe control byte pair is `move_x`, `move_y` ∈ −100…100. The step scales `Accel`\nby `|move_a|/100` on each axis and clamps that axis's speed to\n`MaxSpeed × |move_a|/100`, so a diagonal is not faster than a cardinal.\n\nAim is cosmetic for cogs — a cog's attacks hit their chosen target, not wherever\nthey point. **The boss's aim is not cosmetic:** its cleave cone comes from its\nfacing.\n\n## Roles, abilities and resources\n\n| | **Tank** | **Healer** | **DPS** (×3) |\n|---|---|---|---|\n| Max HP | **300** | **160** | **180** |\n| Attack range | 40 px (melee) | 300 px | 420 px |\n| Attack cooldown | 12 ticks (0.5 s) | 24 ticks (1.0 s) | 18 ticks (0.75 s) |\n| Attack damage | 12 | 8 | 34 |\n| Threat per damage | **×3** | ×1 | ×1 |\n| Signature | **Taunt** | **Heal**, **Shield** | **Interrupt** |\n\n- **Attack** is automatic: the control layer holds the attack bit whenever the\n  order's target is alive, in range and line-of-sight clear and the cooldown is\n  at 0. The order chooses *what* to hit.\n- **Taunt** (tank): range 200 px, cooldown 192 ticks (8 s), instant. Sets the\n  tank's threat to 1.15 × the highest current threat and locks the boss's target\n  to the tank for 72 ticks (3 s). A taunt fired while the tank already holds the\n  target still burns the cooldown and records `taunt{result:\"already_target\"}`.\n- **Heal** (healer): range 360 px, line of sight required, cast 24 ticks (1.0 s),\n  heals 90 HP, costs 60 mana, no cooldown. Cancelled (mana refunded) if the\n  healer moves more than 8 px, the target dies, or the line breaks. Overheal is\n  recorded and wasted. Healing adds 0.25 threat per HP actually healed.\n- **Shield** (healer): instant, range 360 px, 120 absorb on one ally, costs 150\n  mana, cooldown 360 ticks (15 s), expires after 480 ticks if unspent.\n- **Mana** (healer only): 1200 max, +30 on every tick where `t mod 24 == 0`, so\n  the sustained ceiling is 45 HP/s of healing and the pool is a burst reserve\n  worth ~20 extra heals. Triage is forced.\n- **Interrupt** (dps): instant, range 420 px, line of sight required, cooldown\n  480 ticks (20 s). Cancels an interruptible boss cast. If two interrupts land on\n  the same cast in the same tick, the **lower slot index wins** and the other\n  records `interrupt{result:\"wasted\"}` with its cooldown burned.\n- **Death is final.** No resurrection, no respawn. A dead cog is inert, is not\n  asked for an order, and stops accruing anything. Five deaths is a wipe.\n\n## SMELTER-9\n\n`bossMaxHp = 26000` in the default variant. Body 56 × 56 at (617, 329); the boss\n**never moves**. It faces its current target, turning at most 6 brads/tick,\nexcept during a cleave telegraph, when **its facing is frozen** — that is what\nmakes side-stepping work.\n\n**Threat and targeting.** Every point of damage dealt to the boss adds threat\n(tank ×3); every HP healed adds 0.25 threat to the healer. On every tick where\n`t mod 24 == 0` the boss retargets to the highest-threat living cog, but only if\nthat cog's threat exceeds the current target's by **more than 10 %**. A taunt\noverrides both rules for 72 ticks.\n\n**Boss melee.** Every 36 ticks (1.5 s), 55 damage to its current target if that\ncog is within 60 px; out of reach the swing whiffs and is still recorded.\n\n### Phases (by boss HP, checked every tick, one-way)\n\n| Phase | Boss HP | Name | What is on |\n|---|---|---|---|\n| **1** | 100 % → 70 % | *Forge* | melee, Cleave, Slag Pour |\n| **2** | 70 % → 35 % | *Slag* | + Slag Crawler waves, + Overload |\n| **3** | 35 % → 0 % | *Meltdown* | melee, Cleave (faster), **Crucible Pour** replaces Slag Pour, Overload, one add wave at entry |\n| **Enrage** | any, at `t ≥ 5760` (240 s) | *Enrage* | boss damage **×3**, melee period 36 → 24 ticks; permanent |\n\nA phase transition zeroes every ability's schedule counter and restarts it,\nemits `phase_start`, and (entering 2 or 3) spawns an add wave immediately.\n\n### Ability 1 — Cleave (all phases)\n\nA frontal cone: **±32 brads (±45°) around the boss's frozen facing, reach\n180 px**. **Telegraph 48 ticks (2.0 s)** — the cone is drawn on the floor from\nthe tick the cast starts. On resolution: **120 damage** to every living cog\nwhose body centre is inside. Cadence from the previous cleave's resolution:\n**192 ticks (8 s) in phase 1, 168 (7 s) in phase 2, 144 (6 s) in phase 3.** The\nfirst cleave starts at tick 96.\n\n### Ability 2 — Slag Pour (phases 1 and 2)\n\nAt cast start the boss draws one living **non-tank** cog uniformly from the\nepisode PCG32 stream and stamps a circle of **radius 90 px** on that cog's\nposition at that instant. **Telegraph 60 ticks (2.5 s).** On resolution:\n**80 damage** to every living cog inside, and a **slag pool** of radius 90 px is\nleft for **240 ticks (10 s)**, dealing **12 damage** to every cog inside it on\nevery 24th tick after the pool's spawn tick. At most **6** pools exist; a seventh\nexpires the oldest. Cadence from the previous resolution: **240 ticks (10 s)\nphase 1, 216 (9 s) phase 2.** First pour at tick 192.\n\n### Ability 3 — Crucible Pour (phase 3 only; replaces Slag Pour)\n\nSame draw, **radius 110 px**, **telegraph 72 ticks (3.0 s)**, cadence **168 ticks\n(7 s)**. On resolution, let `k` be the number of living cogs whose body centre is\ninside:\n\n- `k == 0` → nobody soaked: the boss gains one permanent **Spill** stack,\n  **+20 % boss damage each, maximum 5 stacks**, and no pool is left.\n- `k ≥ 1` → **240 damage split evenly**, `240 div k` to each (240 alone, 120 each\n  for two, 80 for three), and a 240-tick pool is left.\n\nOne dps alone dies to it; the tank alone survives it and then needs a heal; two\ncogs eat it cheaply. This is the mechanic that most rewards five strangers\nagreeing on something in advance.\n\n### Ability 4 — Overload (phases 2 and 3)\n\nA **96-tick (4.0 s) cast** with a visible cast bar, started every **480 ticks\n(20 s)** measured from the phase's entry tick. **Interruptible.** If it\ncompletes: **70 damage to all five cogs** and the boss **heals 400 HP** (which\ncan push it back above a phase threshold in HP but never re-enters a phase). If\ninterrupted, the cast is cancelled and the next Overload is scheduled 480 ticks\nfrom the cancellation.\n\n### Ability 5 — Slag Crawlers (the adds)\n\nPhase 2, plus one wave at phase-3 entry. At phase-2 entry and every **360 ticks\n(15 s)** while in phase 2, **2 crawlers** spawn at the two alcoves furthest from\nthe current boss target. A crawler: **220 HP**, max speed 640 (2.5 px/tick), body\n16 × 16, melee **range 30 px**, **18 damage every 24 ticks**, no ranged attack.\nIt targets the highest-threat cog within 400 px, else the nearest living cog,\nretargeting every 24 ticks. Crawlers take player damage normally and give no\nthreat on the boss. **Cap 8 alive.** While **4 or more** crawlers are alive the\nboss gains **+25 % damage** (`feed_buff` events on both edges).\n\n### Damage multiplier order\n\n`final = base × (1 + 0.25·feed) × (1 + 0.20·spill_stacks) × (3 if enraged\nelse 1)`, integer-truncated at the end. It applies to every boss-sourced damage\ninstance — melee, cleave, pour, crucible, Overload and pool ticks — and not to a\ncrawler's own bite.\n\n## Time and turns\n\n`dt = 1/24 s`.\n\n| | Default variant | Sprint variant |\n|---|---|---|\n| `turnTicks` (decision turn) | 120 ticks = 5.0 s | 120 |\n| `enrageTicks` | 5760 = 240 s | 2880 = 120 s |\n| `maxTicks` (hard end) | 6480 = 270 s | 3600 = 150 s |\n| `bossMaxHp` | 26000 | 13000 |\n| decision turns, maximum | 54 | 30 |\n\nA **decision turn** is 120 ticks. At the first tick of a turn the server freezes\nthe state, builds a view for every **living** seat, collects one **order** each,\nand hands them to the deterministic control layer, which drives the cogs for all\n120 ticks. Dead seats are not queried.\n\n## Resolution order (exact, per tick `t`)\n\n\"Seat order\" always means ascending slot index 0…4; \"add order\" means ascending\nadd id.\n\n1. **Clock.** If `t == enrageTicks`, set `enraged` and emit `enrage`.\n2. **Control compile.** For each living cog in seat order the control layer reads\n   the world and the seat's active order and produces\n   `(move_x, move_y, aim_turn, action)`. A dead cog produces `(0, 0, 0, 0)`.\n3. **Quantise and record.** `move_x`, `move_y` → `int8` in −100…100; `aim_turn` →\n   `int8` clamped to ±8; `action` → a `uint8` bitfield\n   (`bit0 attack`, `bit1 taunt`, `bit2 heal`, `bit3 shield`, `bit4 interrupt`).\n   **These bytes are the whole input record.**\n4. **Aim.** Cogs turn, then the boss turns at most 6 brads toward its target\n   unless a cleave telegraph is live, then each add faces its target.\n5. **Cog motion**, in seat order, then **6. add motion** in add order.\n7. **Timers.** Cooldowns down, casts on, pools and telegraphs age, and on\n   `t mod 24 == 0` the healer gains 30 mana (cap 1200).\n8. **Player abilities**, in this fixed sub-order so races are decidable:\n   (a) interrupt (seat order; lowest slot wins a tie), (b) taunt, (c) shield,\n   (d) heal completion, (e) attacks (seat order).\n9. **Threat.** This tick's damage and healing fold into the threat table.\n10. **Boss retarget** on `t mod 24 == 0`, not while a taunt lock is live.\n11. **Boss scheduling.** A finished Overload lands; then, if no cast or telegraph\n    is live and a cadence counter has expired, the highest-priority available\n    ability starts, in the order **Overload > Crucible/Slag Pour > Cleave**.\n12. **Telegraph resolution**, in creation order.\n13. **Pools** bite and expire.\n14. **Boss and add attacks.**\n15. **Deaths.**\n16. **Phase check.**\n17. **Meters.**\n18. **Keyframe** on `t mod 24 == 0`.\n19. **End check**, in order: boss dead → `complete/kill`; all five cogs dead →\n    `complete/wipe`; `t + 1 == maxTicks` → `complete/enrage_timeout`; wall-clock\n    budget exceeded → `deadline/wall_clock`.\n\n## Scoring\n\n```\nremoved  = bossMaxHp - max(0, bossHpFinal)\nf        = removed / bossMaxHp                     in [0, 1]\nT        = enrageTicks / 24            = 240.0 s\nelapsed  = finalTick / 24\ncharged  = elapsed   if end_rule == \"kill\"\n         = T         for every other ending\nscore    = clamp(f * T / charged, 0.0, 3.0)\nresults.scores = [score, score, score, score, score]\n```\n\n**Higher is better.** `score` is \"boss health removed ÷ time spent\", in units of\nthe enrage timer, so **1.0 means \"killed it exactly on the enrage timer\"**.\nFaster kills score above 1.0; anything that is not a kill scores the fraction of\nthe boss it removed, because the raid consumed the whole attempt.\n\n| Ending | `f` | `elapsed` | `charged` | score |\n|---|---|---|---|---|\n| Clean kill at 192 s | 1.00 | 192.0 | 192.0 | **1.250** |\n| Kill 4 s into enrage, 244 s | 1.00 | 244.0 | 244.0 | **0.984** |\n| Wipe at 150 s with 71 % removed | 0.71 | 150.0 | 240.0 | **0.710** |\n| Survived to the 270 s hard end at 88 % | 0.88 | 270.0 | 240.0 | **0.880** |\n| Wall-clock deadline at 130 s, 44 % removed | 0.44 | 130.0 | 240.0 | **0.440** |\n| Instant faceplant: wipe at 12 s, 3 % removed | 0.03 | 12.0 | 240.0 | **0.030** |\n\n**Every seat carries the identical score** — the idea's \"shared equally\", and the\nreason a healer who never damages the boss can still be a champion. The per-seat\nmeters (damage, healing, avoidable hits) are recorded for the endcard and for\nhumans, and are **not** part of the score.\n\n**What the league ranks by:** the seat's mean `results.scores` value across its\nepisodes. Elo is wrong here — with five identical scores every episode is a\nfive-way draw.\n\n## End conditions\n\n`results.reason` is a closed enum of exactly three values; `results.end_rule`\ncarries the detail and is a closed enum of exactly five.\n\n| `reason` | `end_rule` | When |\n|---|---|---|\n| `complete` | `kill` | Boss HP ≤ 0. The good ending. |\n| `complete` | `wipe` | All five cogs dead. |\n| `complete` | `enrage_timeout` | `maxTicks` reached with the boss alive. |\n| `deadline` | `wall_clock` | `wallClockBudgetSeconds` elapsed first. Declared acceptable: the hosted LLM was slow, not the game broken, and the replay is complete up to the stop tick. |\n| `fault` | `sim_fault` | A sim invariant guard tripped. |\n| `fault` | `host_error` | An unexpected server-side exception. |\n\nA seat that never connects does **not** end the episode: its cog is driven by the\n`stalwart` scripted baseline for the whole encounter, the no-show is reported to\n`COGAME_PLAYER_FAILURE_URI`, and the raid plays on.\n\n## League operations (recorded, not sim logic)\n\nThe integrity clause is a scheduling requirement on the ladder, and the sim is\ndeliberately blind to it: (a) the five seats of an episode must be drawn from\n**five different accounts**; (b) a seat's ranking figure is its **cross-play\nmean**, computed over episodes whose teammate mix varies, and must **include\nepisodes seated with the frozen scripted baselines** so that a policy which only\nperforms alongside its own twin is visible as such. The game container has no\nnotion of accounts, and no rule here depends on one.\n"
+          }
+        },
+        {
+          "id": "protocol.md",
+          "title": "Wire protocol",
+          "content": {
+            "type": "text",
+            "value": "# Wire protocol\n\nTwo protocols and one file format:\n\n- **`raid.player.v1`** — JSON text frames over the websocket named by\n  `COWORLD_PLAYER_WS_URL` (already carrying `?slot=N&token=T`).\n- **`raid.global.v1`** — the spectator snapshot pushed over `/global`.\n- **`raid.replay.v1`** — the strict UTF-8 JSON replay written to\n  `COGAME_SAVE_REPLAY_URI`.\n\n## `raid.player.v1`\n\nA raid policy is a prompt. The player container's only job is to deliver it: the\n**game server** makes every decision, because the Bedrock sidecar credentials\nand the `anthropic_api_key` coworld secret are injected into the game pod and\n\"one parallel batch per turn\" is a game-server property.\n\n### player → game (exactly once, on connect)\n\n```json\n{\"type\": \"register\",\n \"prompt\": \"<strategy text or empty>\",\n \"scripted\": \"stalwart\" | \"greenhorn\" | null,\n \"policy\": \"<free label, <= 48 runes>\"}\n```\n\n`prompt` is capped at 4000 runes at the transport (over-long is truncated, not\nrejected) and is never written to the replay or the results. A seat that\nregisters with neither field, or never registers at all, plays the `stalwart`\nbaseline. `PLAYER_SCRIPTED` parsing: `stalwart`/`1`/`true`/`yes`/`default` →\nstalwart, `greenhorn`/`green`/`novice` → greenhorn, anything else → none.\n\n### game → player\n\nOn connect:\n\n```json\n{\"type\": \"welcome\", \"protocol\": \"raid.player.v1\", \"slot\": 2,\n \"alias\": \"Charlie\", \"turn_seconds\": 5.0}\n```\n\nOnce per decision turn, to every seat (informational — the seat is not required\nto answer):\n\n```json\n{\"type\": \"turn\", \"turn\": 17, \"tick\": 2040, \"phase\": 2,\n \"role\": \"healer\", \"view\": { … }, \"order_source\": \"llm\"}\n```\n\nA seat that dies receives one turn frame with `view.you.alive == false` and\nnothing further until `done`.\n\nAt the end, then close:\n\n```json\n{\"done\": true, \"result\": { …the results document… }}\n```\n\nThe done broadcast is bounded at 3.0 s per seat.\n\n### The per-seat view\n\nCoordinates are integers (map pixels); times are seconds to one decimal. One\nshape for all three roles — role-specific blocks (`mana`, `cooldowns_s`) appear\nonly where they apply.\n\n```json\n{\"turn\": 17, \"of\": 54, \"tick\": 2040, \"phase\": 2, \"phase_name\": \"Slag\",\n \"clock\": {\"elapsed_s\": 85.0, \"enrage_in_s\": 155.0, \"hard_end_in_s\": 185.0},\n \"you\": {\"alias\": \"Charlie\", \"role\": \"healer\", \"pos\": [742, 402],\n         \"alive\": true, \"hp\": 132, \"max_hp\": 160, \"shield\": 0,\n         \"mana\": 640, \"max_mana\": 1200, \"threat\": 1180,\n         \"attacking\": \"boss\",\n         \"cooldowns_s\": {\"heal\": 0.0, \"shield\": 7.5, \"attack\": 0.3},\n         \"casting\": {\"ability\": \"heal\", \"target\": \"Alpha\",\n                     \"remaining_s\": 0.4}},\n \"boss\": {\"name\": \"SMELTER-9\", \"pos\": [617, 329], \"facing_brads\": 64,\n          \"hp\": 16120, \"max_hp\": 26000, \"hp_pct\": 62.0, \"phase\": 2,\n          \"target\": \"Alpha\", \"enraged\": false,\n          \"buffs\": {\"feed\": true, \"spill_stacks\": 0},\n          \"casting\": {\"ability\": \"overload\", \"remaining_s\": 2.1,\n                      \"interruptible\": true},\n          \"next_s\": {\"cleave\": 3.5, \"pour\": 6.0, \"overload\": 22.1,\n                     \"adds\": 9.0}},\n \"telegraphs\": [{\"id\": 41, \"kind\": \"pour\", \"shape\": \"circle\",\n                 \"centre\": [520, 430], \"radius\": 90, \"resolves_in_s\": 1.4,\n                 \"soak_needed\": 0, \"you_are_inside\": false}],\n \"raid\": [{\"alias\": \"Alpha\", \"role\": \"tank\", \"pos\": [617, 293],\n           \"alive\": true, \"hp\": 188, \"max_hp\": 300, \"shield\": 60,\n           \"threat\": 41200, \"attacking\": \"boss\",\n           \"last_intent\": \"tank_boss\", \"say\": \"cone is north\"}, … 5 … ],\n \"adds\": [{\"id\": \"A5\", \"pos\": [700, 250], \"hp\": 140, \"max_hp\": 220,\n           \"target\": \"Alpha\"}, … ],\n \"pools\": [{\"id\": 12, \"centre\": [560, 470], \"radius\": 90,\n            \"expires_in_s\": 4.0}],\n \"callouts\": [{\"alias\": \"Alpha\", \"say\": \"cone is north\"}],\n \"meters\": {\"damage_to_boss\": [0, 4120, 3980, 4410, 210],\n            \"healing_done\": [0, 0, 0, 0, 5320]},\n \"your_last_order\": { …the order you played last turn, or null on turn 0… }}\n```\n\n**Visible to every seat:** the whole pit; the boss's exact HP, phase, facing,\ntarget, buffs, live cast and the seconds until each of its abilities next fires\n(the schedule is deterministic and documented in `docs/RULES.md`, so hiding it\nwould reward memorisation, not play); every live telegraph with its shape, fuse\nand required bodies; every add and pool; all five cogs' positions, HP, shields,\nthreat, current attack target and last order intent; the running damage and\nhealing meters; and the four other seats' `say` callouts **from the previous\nturn** — the raid's one communication channel, capped at 32 runes, deliberately\npublic and deliberately one turn stale.\n\n**Hidden from every seat:** the other seats' full orders and their private\n`note` text; the episode `seed`; the PCG32 draw for the next pour; the boss's\nremaining schedule beyond the published `next_s` figures; every policy's\n`PLAYER_PROMPT`; and the **real player names behind the aliases**.\n\n### The order schema\n\nThe LLM must return this object; the scripted baselines produce the identical\nshape.\n\n```json\n{\"intent\": \"heal_target\", \"target\": \"Alpha\", \"station\": \"ranged\",\n \"point\": [742, 402], \"on_telegraph\": \"dodge\",\n \"note\": \"tank is eating cleave plus feed; topping it\",\n \"say\": \"tank heals, dodge pours\"}\n```\n\n| Field | Type | Cap / legal values | Repair when violated |\n|---|---|---|---|\n| `intent` | enum, ≤ 16 runes | tank: `tank_boss` `taunt` `pick_up_adds` `kite` `soak` `wait`; healer: `heal_lowest` `heal_target` `shield_target` `conserve` `soak` `wait`; dps: `burn_boss` `kill_adds` `interrupt` `assist_target` `soak` `wait` | unknown, or legal for another role → `tank_boss` / `heal_lowest` / `burn_boss` |\n| `target` | string / null, ≤ 12 runes | `boss`, `A1`…`A8`, `Alpha`…`Echo`; case-insensitive | unknown id, dead entity, or an id illegal for the intent → the intent's natural target; none available → the intent degrades to `wait` |\n| `station` | enum, ≤ 8 runes | `melee` `ranged` `spread` `edge` `point` `soak` | → `melee` for a tank, `ranged` otherwise |\n| `point` | `[int, int]` | clamped into the pit (anything beyond 288 px from (617,329) is pulled onto that circle) | missing / non-finite → the cog's current position |\n| `on_telegraph` | enum, ≤ 8 runes | `dodge` `hold` `soak` `spread` | → `dodge` |\n| `note` | string | ≤ 160 runes | truncated to 160 runes |\n| `say` | string | ≤ 32 runes | truncated to 32 runes |\n\nThree further caps on strings that reach the replay: `register.policy` ≤ 48\nrunes, any recorded error text (`fallback.detail`) ≤ 200 runes, and\n`register.prompt` ≤ 4000 runes at the transport.\n\n**Truncation is on rune (Unicode codepoint) boundaries, never bytes.** A\nbyte-truncated multi-byte character is exactly the bug that makes replay bytes\nrender in a browser and fail a strict JSON parser.\n\n**Parsing is tolerant:** markdown fences are stripped, the outermost balanced\n`{…}` is taken if the model prefixed prose, numeric strings inside `point` are\naccepted, and `target` may arrive as an integer 1–8 (read as `A<n>`) or 0 (read\nas slot 0's alias). Only when no object with a usable `intent` can be recovered\ndoes the retry, and then the fallback, fire.\n\n### The control layer\n\nThe order is compiled to control bytes every tick by the same code for every\npolicy kind:\n\n1. **Reaction override.** While a telegraph is live and its shape contains (or,\n   for `soak`, is the circle to step into) this cog, `on_telegraph` takes over\n   the steering point: `dodge` → the nearest point 20 px outside the shape\n   (perpendicular to a cone's bisector, on the side with more free floor);\n   `hold` → no override; `soak` → the circle's centre; `spread` → 160 px away\n   from the centroid of the other living cogs.\n2. **Steering point** otherwise, from `intent` and `station`: `melee` = 40 px\n   from the target; `ranged` = the 260 px ring from the boss; `spread` = 140 px\n   from the nearest cog; `edge` = the 280 px ring; `point` = the named point;\n   `soak` = the live pour circle's centre. `kite` walks 120 px away from the\n   boss every tick; `wait` stands still.\n3. **Move command.** `d = p* − x`; `|d| ≤ 8` → stop; else the integer unit vector\n   times 100. **Unstick rule:** a cog whose net displacement over 24 ticks is\n   under 6 px while it is commanding movement rotates its heading 45° once a\n   second until it moves. There is **no pathfinder**: a station behind a pillar\n   is a bad order.\n4. **Aim** turns at most 8 brads/tick toward the attack target.\n5. **Action bits** as described in `docs/RULES.md` step 3.\n\n## `raid.global.v1`\n\nSpectators connect a websocket to `/global` and receive the whole snapshot as\nJSON after every decision turn and at the end:\n\n```json\n{\"type\": \"state\", \"game\": \"raid\", \"protocol\": \"raid.global.v1\",\n \"tick\": 2040, \"turn\": 17, \"ticks_per_second\": 24,\n \"phase\": 2, \"phase_name\": \"Slag\",\n \"seats\": [{slot, alias, name, policy_kind, role, pos, aim, alive, hp,\n            max_hp, shield, mana, threat, attacking, intent, note, say,\n            source, damage_to_boss, healing_done, damage_taken,\n            avoidable_hits, connected} × 5],\n \"boss\": {name, pos, aim, hp, max_hp, hp_pct, target, enraged, feed,\n          spill_stacks, casting, cast_remaining, cast_total},\n \"adds\": [...], \"pools\": [...], \"telegraphs\": [...],\n \"enrage_in_s\": 155.0, \"hard_end_in_s\": 185.0,\n \"events\": [ …the whole append-only transcript… ],\n \"done\": false, \"reason\": \"\", \"end_rule\": \"\", \"score\": 0.0}\n```\n\nReal policy names appear here, in the replay and in the results — never in a\nseat's view. The browser page at `/client/replay` renders a recorded episode off\nthe same bundle the platform serves statically.\n\n## `raid.replay.v1`\n\nStrict UTF-8 JSON, self-sufficient: names, colours, config, map geometry, the\nphase table, per-tick controls, per-second states with their digests, the whole\nevent transcript, the seed and the results. The viewer contacts nothing but the\nS3 URL it was given.\n\n```json\n{\"protocol\": \"raid.replay.v1\",\n \"format_version\": 1,\n \"game_version\": \"1\",\n \"seed\": 679961,\n \"config\": { …the fully resolved game config, tokens excluded… },\n \"map\": { …data/foundry.mapspec.json inlined verbatim… },\n \"names\": {\"players\": [...], \"aliases\": [...], \"roles\": [...],\n           \"policy_kinds\": [...], \"colors\": {...}},\n \"ticks_per_second\": 24, \"turn_ticks\": 120, \"tick_count\": 4608,\n \"phases\": [{\"phase\": 1, \"name\": \"Forge\", \"from\": 0, \"to\": 1103}, …],\n \"controls_b64\": \"<base64 of tick_count x 5 x 4 bytes:\n                   (move_x i8, move_y i8, aim_turn i8, action u8)>\",\n \"keyframes\": [{\"t\": 0, \"d\": 2947483111, \"cogs\": [[…7…] × 5],\n                \"boss\": [x, y, aim, hp, phase, feed, spill],\n                \"adds\": [[id, x, y, hp]], \"pools\": [[id, cx, cy, r, age]],\n                \"tel\": [[id, kind, cx, cy, r_or_facing, fuse, soak]],\n                \"mtr\": [[dmg_boss, dmg_adds, healing, taken] × 5]}, … ],\n \"events\": [ … ],\n \"results\": { … }}\n```\n\nA cog keyframe row is `[x, y, aim, hp, shield, mana, state]` with\n`state 0 = alive, 1 = casting, 2 = dead`. A telegraph's `kind` is\n`0 = cleave, 1 = pour, 2 = crucible`.\n\n`seed` + `map` + `config` + the recorded `order` events + the integer sim\nreproduce the encounter exactly; `keyframes` carry the per-second state and its\ndigest `d` so the viewer, the tests and a human reading the JSON can verify the\nre-derivation without running wasm at all. **Auto-attacks and pool ticks are\ndeliberately not evented** (~1500 records a minute would drown the feed); they\nride in the per-second keyframe meters. Every damage instance of 40 or more, and\nevery death, is evented.\n\n### Event vocabulary\n\nEvery record carries `t` (the tick) and `type`.\n\n| `type` | Fields |\n|---|---|\n| `encounter_start` | `seed`, `aliases`, `roles`, `boss_max_hp`, `enrage_s`, `hard_end_s` |\n| `phase_start` | `phase`, `name`, `boss_hp`, `boss_hp_pct`, `elapsed_s` |\n| `turn_start` | `turn`, `boss_hp_pct`, `alive`, `enrage_in_s` |\n| `order` | `turn`, `seat`, `alias`, `role`, `source` (`llm`\\|`scripted`\\|`fallback`), `latency_ms`, `intent`, `target`, `station`, `point`, `on_telegraph`, `note`, `say` |\n| `fallback` | `turn`, `seat`, `alias`, `attempt`, `cause`, `detail` |\n| `budget_guard` | `turn`, `remaining_s` |\n| `cast_start` | `ability`, `cast_ticks`, `interruptible` |\n| `telegraph` | `id`, `kind`, `centre`, `radius` or `facing_brads`+`half_angle_brads`+`reach`, `fuse_ticks`, `soak_needed`, `drawn_on` |\n| `telegraph_resolve` | `id`, `kind`, `hit`, `damage_each`, `soakers`, `spill_gained`, `pool_id` |\n| `interrupt` | `seat`, `alias`, `ability`, `result` (`success`\\|`wasted`\\|`late`\\|`out_of_range`) |\n| `taunt` | `seat`, `alias`, `result` (`pulled`\\|`already_target`\\|`out_of_range`) |\n| `heal` | `seat`, `alias`, `target`, `amount`, `overheal`, `mana_left`, `result` (`applied`\\|`cancelled`), `why` |\n| `shield` | `seat`, `alias`, `target`, `absorb` |\n| `adds_spawn` | `wave`, `ids`, `positions`, `alive_after` |\n| `add_death` | `id`, `killer`, `alive_after` |\n| `feed_buff` | `active`, `adds_alive` |\n| `boss_hit` | `target`, `ability`, `amount`, `absorbed`, `hp_left` |\n| `boss_damaged` | `seat`, `alias`, `amount`, `boss_hp`, `boss_hp_pct` — only when a hit crosses a 5 % boss-HP boundary |\n| `pool_spawn` / `pool_expire` | `id`, `centre`, `radius` |\n| `death` | `alias`, `role`, `killer`, `elapsed_s`, `alive_left` |\n| `enrage` | `elapsed_s`, `boss_hp_pct` |\n| `end` | `reason`, `end_rule`, `boss_hp_removed_frac`, `elapsed_s`, `charged_s`, `score`, `phase_reached`, `alive_at_end`, `meters` |\n\n## The results document\n\nPer-seat arrays are length 5 in slot order. This key set is closed and must\nequal the manifest's `results_schema` key for key.\n\n```json\n{\"names\": [...], \"aliases\": [...], \"roles\": [...], \"policy_kinds\": [...],\n \"scores\": [1.25, 1.25, 1.25, 1.25, 1.25],\n \"boss_hp_removed\": 26000, \"boss_max_hp\": 26000,\n \"boss_hp_removed_frac\": 1.0,\n \"elapsed_seconds\": 192.0, \"charged_seconds\": 192.0,\n \"enrage_seconds\": 240.0, \"phase_reached\": 3,\n \"kill\": true, \"wipe\": false, \"deaths\": 1, \"alive_at_end\": 4,\n \"damage_to_boss\": [...], \"damage_to_adds\": [...], \"healing_done\": [...],\n \"overhealing\": [...], \"damage_taken\": [...], \"avoidable_hits\": [...],\n \"interrupts_landed\": [...], \"interrupts_wasted\": [...],\n \"overloads_resolved\": 1, \"adds_killed\": 8, \"spill_stacks\": 0,\n \"reason\": \"complete\", \"end_rule\": \"kill\",\n \"final_tick\": 4608, \"final_turn\": 39, \"seed\": 679961,\n \"llm_turns\": [...], \"fallback_turns\": [...],\n \"fallback_causes\": [{\"timeout\": 0, \"parse_error\": 0,\n                      \"transport_error\": 0, \"no_credentials\": 0,\n                      \"budget_guard\": 0}, … 5 … ]}\n```\n\n## Runtime contract\n\nThe game container honours `bitworld/runtime`: `COGAME_CONFIG_URI`,\n`COGAME_RESULTS_URI`, `COGAME_SAVE_REPLAY_URI`, `COGAME_LOAD_REPLAY_URI`,\n`COGAME_PLAYER_FAILURE_URI`, plus `COGAME_EVENTS_URI` and `COGAME_METRICS_URI`\nwhich are **`file://`-only and loudly rejected otherwise**. Routes:\n`GET /healthz`, `GET /client/replay`, `GET /client/<asset>`,\n`GET /replay-data` (replay mode), `WS /player?slot=N&token=T` (403 on a bad\nslot/token, 409 on a duplicate connection), `WS /global`.\n"
+          }
+        }
+      ]
+    }
+  },
+  "player": [
+    {
+      "id": "baseline",
+      "name": "stalwart",
+      "type": "player",
+      "description": "The bundled certification player and the default baseline: the correct execution of the encounter, played by the server with no LLM involved.",
+      "image": "{{PLAYER_IMAGE}}",
+      "run": [
+        "/bin/raid-player"
+      ],
+      "resources": {
+        "requests": {
+          "cpu": "100m",
+          "memory": "64Mi"
+        },
+        "limits": {
+          "cpu": "1"
+        }
+      },
+      "source_url": "https://github.com/Metta-AI/cogame-raid/tree/main",
+      "env": {
+        "PLAYER_SCRIPTED": "stalwart"
+      }
+    },
+    {
+      "id": "greenhorn",
+      "name": "greenhorn",
+      "type": "player",
+      "description": "The weaker scripted baseline: everyone in melee, everyone dodging everything, nobody interrupting, nobody soaking, adds ignored. A clean floor for the ladder.",
+      "image": "{{PLAYER_IMAGE}}",
+      "run": [
+        "/bin/raid-player"
+      ],
+      "resources": {
+        "requests": {
+          "cpu": "100m",
+          "memory": "64Mi"
+        },
+        "limits": {
+          "cpu": "1"
+        }
+      },
+      "source_url": "https://github.com/Metta-AI/cogame-raid/tree/main",
+      "env": {
+        "PLAYER_SCRIPTED": "greenhorn"
+      }
+    },
+    {
+      "id": "raid-player",
+      "name": "Raid Prompt Player",
+      "type": "player",
+      "description": "The reference raid policy: delivers its PLAYER_PROMPT to the game and spectates until the final frame. Field your own by uploading this same image with a different PLAYER_PROMPT.",
+      "image": "{{PLAYER_IMAGE}}",
+      "run": [
+        "/bin/raid-player"
+      ],
+      "resources": {
+        "requests": {
+          "cpu": "100m",
+          "memory": "64Mi"
+        },
+        "limits": {
+          "cpu": "1"
+        }
+      },
+      "source_url": "https://github.com/Metta-AI/cogame-raid/tree/main"
+    }
+  ],
+  "variants": [
+    {
+      "id": "default",
+      "name": "SMELTER-9 (5 cogs, 240 s enrage)",
+      "description": "The full pull: 26000 boss health, enrage at 240 s, hard stop at 270 s, up to 54 decision turns.",
+      "game_config": {
+        "players": [
+          {
+            "name": "Player1"
+          },
+          {
+            "name": "Player2"
+          },
+          {
+            "name": "Player3"
+          },
+          {
+            "name": "Player4"
+          },
+          {
+            "name": "Player5"
+          }
+        ],
+        "num_agents": 5,
+        "bossMaxHp": 26000,
+        "turnTicks": 120,
+        "enrageTicks": 5760,
+        "maxTicks": 6480,
+        "turnBudgetSeconds": 10,
+        "wallClockBudgetSeconds": 660,
+        "playerConnectTimeoutSeconds": 90,
+        "mapPath": "foundry"
+      }
+    },
+    {
+      "id": "sprint",
+      "name": "SMELTER-9 Sprint (5 cogs, 120 s enrage)",
+      "description": "Cheap ladder rounds: half the health pool and half the enrage timer together, so the score scale is unchanged and a kill on the timer is still 1.0. Never changes the seat count.",
+      "game_config": {
+        "players": [
+          {
+            "name": "Player1"
+          },
+          {
+            "name": "Player2"
+          },
+          {
+            "name": "Player3"
+          },
+          {
+            "name": "Player4"
+          },
+          {
+            "name": "Player5"
+          }
+        ],
+        "num_agents": 5,
+        "bossMaxHp": 13000,
+        "turnTicks": 120,
+        "enrageTicks": 2880,
+        "maxTicks": 3600,
+        "turnBudgetSeconds": 10,
+        "wallClockBudgetSeconds": 400,
+        "playerConnectTimeoutSeconds": 90,
+        "mapPath": "foundry"
+      }
+    }
+  ],
+  "certification": {
+    "game_config": {
+      "players": [
+        {
+          "name": "P1"
+        },
+        {
+          "name": "P2"
+        },
+        {
+          "name": "P3"
+        },
+        {
+          "name": "P4"
+        },
+        {
+          "name": "P5"
+        }
+      ],
+      "num_agents": 5,
+      "seed": 42,
+      "roles": [
+        "tank",
+        "healer",
+        "dps",
+        "dps",
+        "dps"
+      ],
+      "bossMaxHp": 3000,
+      "turnTicks": 120,
+      "enrageTicks": 960,
+      "maxTicks": 1200,
+      "turnBudgetSeconds": 10,
+      "wallClockBudgetSeconds": 180,
+      "playerConnectTimeoutSeconds": 60,
+      "mapPath": "foundry"
+    },
+    "players": [
+      {
+        "player_id": "baseline"
+      },
+      {
+        "player_id": "baseline"
+      },
+      {
+        "player_id": "baseline"
+      },
+      {
+        "player_id": "baseline"
+      },
+      {
+        "player_id": "baseline"
+      }
+    ]
+  }
+}

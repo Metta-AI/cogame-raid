@@ -1,0 +1,31 @@
+[
+  {
+    "name": "raid-anvil",
+    "run": "/bin/raid-player",
+    "env": {
+      "PLAYER_PROMPT": "Hold the pull together: nothing kills a raid faster than five cogs answering the same mechanic differently.\nIf you are the TANK: open with intent \"tank_boss\", station \"point\", point [617,180] - stand NORTH of the boss so its facing, and therefore every cleave, points at the empty top of the pit and never at your team. Keep on_telegraph \"hold\" for the whole fight: you are supposed to eat cleaves, and stepping out of one drags the cone across the raid on the next retarget. Taunt the moment the boss's target in your view is not you - do not taunt on cooldown for its own sake, a wasted taunt is eight seconds you do not have when a dps pulls. When crawlers spawn, switch to \"pick_up_adds\" for exactly one order to gather them, then back to \"tank_boss\": adds beating on you are adds not beating on the healer. In phase 3 take the crucible yourself with intent \"soak\" whenever your hp is above 60% - you are the only cog who survives it alone.\nIf you are the HEALER: station \"ranged\" and stand where a pillar is never between you and the tank. Use \"heal_lowest\" while anyone is under 60%, \"conserve\" whenever everyone is above 75% - your mana is 1200 and regenerates 30 a second, so blanket-healing runs you dry before Meltdown and a dry healer is a wipe. Shield the tank just before a cleave lands, not after. on_telegraph \"dodge\" always; you cannot afford one avoidable hit.\nIf you are DPS: \"burn_boss\" from station \"ranged\", on_telegraph \"dodge\". Say your interrupt claim out loud on the first turn of phase 2 - \"I interrupt\" - and if a team-mate already claimed it, do not hold \"interrupt\" yourself, stay on \"burn_boss\". Switch to \"kill_adds\" the moment three or more crawlers are alive and switch back the moment it is under three. In phase 3, if your hp is above 150 and no team-mate has called a soak, take the crucible with intent \"soak\"."
+    }
+  },
+  {
+    "name": "raid-triage",
+    "run": "/bin/raid-player",
+    "env": {
+      "PLAYER_PROMPT": "Play the clock, not the boss. 240 seconds of enrage timer is the only real enemy; everything else is a tax on your damage.\nIf you are the TANK: station \"point\" and put yourself on the far side of the boss from wherever the pour circles have been landing, so the cleave cone sweeps dead floor. on_telegraph \"hold\". Taunt pre-emptively at the start of every phase - the retarget on a phase change is where tanks lose the boss - and never otherwise. Do not chase crawlers across the pit: use \"pick_up_adds\" only when the adds are already within 200 px of you, otherwise the boss walks out of your team's range and every dps loses uptime.\nIf you are the HEALER: triage by role, not by percentage. The tank is the only cog whose death ends the fight immediately, so keep it topped with \"heal_target\" on the tank whenever the tank is under 80%; a dps at 40% that is dodging correctly will live. Shield the cog the pour just picked, not the lowest one. Spend your whole mana pool in phase 3 - there is no phase 4 to save it for. on_telegraph \"dodge\", except \"soak\" in phase 3 if your hp is over 120 and you can see the tank is already low.\nIf you are DPS: your job is dps uptime, so pick a station and stop moving. Use \"ranged\" and on_telegraph \"dodge\"; only spread when the raid is bunched. Take \"interrupt\" as your standing intent for the entire fight if nobody else has said they are on it - an Overload that lands costs the raid 400 boss hp plus 350 raid hp, which is worth more than four seconds of your damage. Ignore crawlers entirely unless four are up (that is when the boss starts hitting 25% harder) and then kill exactly enough to get back under four. Call your target out with \"say\" every time you switch."
+    },
+    "player": "ply_bac48eb1-662e-44f8-973d-f3e016dccf5d"
+  },
+  {
+    "name": "raid-stalwart",
+    "run": "/bin/raid-player",
+    "env": {
+      "PLAYER_SCRIPTED": "stalwart"
+    }
+  },
+  {
+    "name": "raid-greenhorn",
+    "run": "/bin/raid-player",
+    "env": {
+      "PLAYER_SCRIPTED": "greenhorn"
+    }
+  }
+]
