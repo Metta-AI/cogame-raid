@@ -2,7 +2,7 @@
 ## batch contract, the per-turn budget, the budget guard, the wall-clock stop
 ## and the fault path.
 
-import std/[json, times]
+import std/[json, strutils, times]
 import support/helpers
 
 type
@@ -159,6 +159,27 @@ proc testEncounterEndsWithoutADecider() =
     checkEq(record{"source"}.getStr(), "scripted", "on the scripted layer")
   done("with no LLM at all the encounter still completes")
 
+proc testEffectiveDeadlinesFitTheTurnBudget() =
+  ## The LLM deadlines are handed to curl, whose timeout is WHOLE seconds, so
+  ## the configured 6.5 s first attempt really waits 7 s. The budget check has
+  ## to be made on those rounded numbers: 6.2 + 3.2 looks like 9.4 s and is
+  ## really 7 + 4 = 11 s, a turn over its budget.
+  checkEq(deadlineSeconds(6.5), 7, "6.5 s of deadline is 7 s of waiting")
+  checkEq(deadlineSeconds(3.0), 3, "a whole number is itself")
+  checkEq(deadlineSeconds(0.2), 1, "and nothing gets less than a second")
+  var config = certConfig()
+  config.validate()          ## 7 + 3 = exactly the 10.0 s budget: allowed
+  config.llmAttemptSeconds = 6.2
+  config.llmRetrySeconds = 3.2
+  var raised = ""
+  try:
+    config.validate()
+  except RaidError as error:
+    raised = error.msg
+  check(raised.len > 0, "a config that rounds up past the budget is refused")
+  check("turnBudgetSeconds" in raised, "and says which bound it broke")
+  done("the turn budget is checked against the deadlines curl actually uses")
+
 when isMainModule:
   testOneParallelBatchPerTurn()
   testDeadSeatsDropOutOfTheBatch()
@@ -167,4 +188,5 @@ when isMainModule:
   testSimFault()
   testEveryTurnRecordsOrders()
   testEncounterEndsWithoutADecider()
+  testEffectiveDeadlinesFitTheTurnBudget()
   echo "test_engine: the turn loop, its budgets and its fault paths check out"

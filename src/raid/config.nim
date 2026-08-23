@@ -51,6 +51,19 @@ proc defaultGameConfig*(): GameConfig =
     gameOverTicks: 96
   )
 
+proc deadlineSeconds*(value: float): int =
+  ## The integer deadline an LLM attempt actually gets. curl's OPT_TIMEOUT -
+  ## and therefore `curly.makeRequests` - is whole seconds, so a 6.5 s
+  ## configured deadline is really 7 s of waiting. Rounding UP is deliberate:
+  ## a deadline shorter than the configured one would cut a reply that was
+  ## still inside its budget. Every check against the turn budget has to use
+  ## this number rather than the configured float.
+  result = int(value)
+  if value > result.float:
+    result.inc
+  if result < 1:
+    result = 1
+
 proc validate*(config: GameConfig) =
   if config.numAgents != Seats:
     raise newException(RaidError,
@@ -68,11 +81,17 @@ proc validate*(config: GameConfig) =
   for role in config.roles:
     discard parseRole(role)
   ## Both attempt deadlines must fit inside one turn budget, or the outer
-  ## per-turn deadline can never be honoured.
-  if config.llmAttemptSeconds + config.llmRetrySeconds >
-      config.turnBudgetSeconds + 1e-9:
+  ## per-turn deadline can never be honoured - checked on the EFFECTIVE
+  ## whole-second deadlines, because those are what the turn really spends.
+  ## At the shipped 6.5 + 3.0 that is 7 + 3 = exactly the 10.0 s budget: the
+  ## turn budget is honoured, with no slack left over.
+  let attempt = deadlineSeconds(config.llmAttemptSeconds)
+  let retry = deadlineSeconds(config.llmRetrySeconds)
+  if (attempt + retry).float > config.turnBudgetSeconds + 1e-9:
     raise newException(RaidError,
-      "llmAttemptSeconds + llmRetrySeconds must be <= turnBudgetSeconds")
+      "llmAttemptSeconds + llmRetrySeconds must be <= turnBudgetSeconds " &
+      "once rounded up to whole seconds (" & $attempt & " + " & $retry &
+      " > " & $config.turnBudgetSeconds & ")")
   if config.wallClockBudgetSeconds >
       0.6 * config.episodeTimeoutSeconds.float + 1e-9:
     raise newException(RaidError,

@@ -126,19 +126,12 @@ proc bedrockUrl(client: LlmClient): string =
   client.bedrockEndpoint & "/model/" &
     client.bedrockModels[client.bedrockModel] & "/invoke"
 
-proc ceilSeconds(value: float): int =
-  result = int(value)
-  if value > result.float:
-    result.inc
-  if result < 1:
-    result = 1
-
 proc newLlmClient*(config: GameConfig): LlmClient =
   result = LlmClient(
     model: config.model,
     maxOutputTokens: config.maxOutputTokens,
-    attemptSeconds: ceilSeconds(config.llmAttemptSeconds),
-    retrySeconds: ceilSeconds(config.llmRetrySeconds)
+    attemptSeconds: deadlineSeconds(config.llmAttemptSeconds),
+    retrySeconds: deadlineSeconds(config.llmRetrySeconds)
   )
   let bedrockEndpoint = getEnv("AWS_ENDPOINT_URL_BEDROCK_RUNTIME").strip()
   let bedrockToken = getEnv("AWS_BEARER_TOKEN_BEDROCK").strip()
