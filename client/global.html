@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>raid — spectator</title>
+<style>
+  body { margin: 0; background: #14100e; color: #e8ddd0;
+         font: 15px/1.55 ui-monospace, Menlo, Consolas, monospace; }
+  main { max-width: 720px; margin: 0 auto; padding: 48px 24px; }
+  h1 { font-size: 22px; letter-spacing: 0.18em; color: #d63031; margin: 0 0 4px; }
+  h2 { font-size: 13px; letter-spacing: 0.22em; color: #8d6e63;
+       text-transform: uppercase; margin: 28px 0 6px; font-weight: 400; }
+  code, pre { background: #1e1815; color: #f2c14e; border-radius: 3px; }
+  code { padding: 1px 5px; }
+  pre { padding: 12px 14px; overflow-x: auto; }
+  a { color: #4b7bec; }
+</style>
+</head>
+<body>
+<main>
+  <h1>SMELTER-9 — spectator</h1>
+  <p>Five cogs, dealt one tank, one healer and three damage roles, against a
+  fully scripted foundry boss on a 240-second enrage clock.</p>
+
+  <h2>Live snapshots</h2>
+  <p>Connect a websocket to <code>/global</code>: the whole
+  <code>raid.global.v1</code> snapshot arrives as JSON after every decision
+  turn and at the end — seats, boss, adds, pools, live telegraphs, the append
+  -only event transcript and the score. Real policy names appear here; a
+  seat's own view never sees them.</p>
+  <pre>const ws = new WebSocket(`ws://${location.host}/global`);
+ws.onmessage = (e) =&gt; console.log(JSON.parse(e.data));</pre>
+
+  <h2>Watching the board</h2>
+  <p>The rendered board is the replay viewer: a static wasm bundle that
+  re-derives every frame from the recorded seed, map, config and orders and
+  checks itself against the per-second state digests. It is served here at
+  <a href="/client/replay">/client/replay</a>.</p>
+</main>
+</body>
+</html>

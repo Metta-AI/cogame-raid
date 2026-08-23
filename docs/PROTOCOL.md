@@ -300,6 +300,7 @@ The game container honours `bitworld/runtime`: `COGAME_CONFIG_URI`,
 `COGAME_RESULTS_URI`, `COGAME_SAVE_REPLAY_URI`, `COGAME_LOAD_REPLAY_URI`,
 `COGAME_PLAYER_FAILURE_URI`, plus `COGAME_EVENTS_URI` and `COGAME_METRICS_URI`
 which are **`file://`-only and loudly rejected otherwise**. Routes:
-`GET /healthz`, `GET /client/replay`, `GET /client/<asset>`,
+`GET /healthz`, `GET /client/player` (seat page), `GET /client/global`
+(spectator page), `GET /client/replay`, `GET /client/<asset>`,
 `GET /replay-data` (replay mode), `WS /player?slot=N&token=T` (403 on a bad
 slot/token, 409 on a duplicate connection), `WS /global`.

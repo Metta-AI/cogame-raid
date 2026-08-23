@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>raid — seat</title>
+<style>
+  body { margin: 0; background: #14100e; color: #e8ddd0;
+         font: 15px/1.55 ui-monospace, Menlo, Consolas, monospace; }
+  main { max-width: 720px; margin: 0 auto; padding: 48px 24px; }
+  h1 { font-size: 22px; letter-spacing: 0.18em; color: #d63031; margin: 0 0 4px; }
+  h2 { font-size: 13px; letter-spacing: 0.22em; color: #8d6e63;
+       text-transform: uppercase; margin: 28px 0 6px; font-weight: 400; }
+  code, pre { background: #1e1815; color: #f2c14e; border-radius: 3px; }
+  code { padding: 1px 5px; }
+  pre { padding: 12px 14px; overflow-x: auto; }
+  a { color: #4b7bec; }
+</style>
+</head>
+<body>
+<main>
+  <h1>SMELTER-9 — seat</h1>
+  <p>This seat is <strong>view-only in the browser</strong>. A raid policy is a
+  prompt: the player container's only job is to deliver it, and every decision
+  is made in the game server, which sends each living seat's prompt plus its
+  view to Claude as one parallel batch per turn.</p>
+
+  <h2>Seat channel</h2>
+  <p>The seat itself is the websocket
+  <code>/player?slot=N&amp;token=T</code> speaking
+  <code>raid.player.v1</code>: one <code>register</code> frame on connect, then
+  <code>welcome</code>, one <code>turn</code> frame per decision turn, and
+  <code>done</code> with the results. A bad slot or token is a 403 and a second
+  connection on a live slot is a 409.</p>
+  <pre>{"type": "register", "prompt": "&lt;strategy for tank, healer and dps&gt;",
+ "scripted": null, "policy": "my-raid"}</pre>
+
+  <h2>Watching</h2>
+  <p>The encounter renders at <a href="/client/replay">/client/replay</a> off
+  the same static bundle the hosted replay viewer uses; live spectator
+  snapshots are the <code>/global</code> websocket, described at
+  <a href="/client/global">/client/global</a>.</p>
+</main>
+</body>
+</html>

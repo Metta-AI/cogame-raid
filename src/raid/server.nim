@@ -2,6 +2,8 @@
 ##
 ## Endpoints:
 ##   GET /healthz                    - liveness
+##   GET /client/player              - seat page (view-only; policies are prompts)
+##   GET /client/global              - spectator page
 ##   GET /client/replay              - the broadcast replay page
 ##   GET /client/<asset>             - chrome_common.js, broadcast_core.js
 ##   GET /replay-data                - the recorded replay JSON (replay mode)
@@ -286,6 +288,16 @@ proc replayPageHandler(request: Request) {.gcsafe.} =
     serveFile(request, clientDir() / "replay_broadcast.html",
       "text/html; charset=utf-8")
 
+proc playerPageHandler(request: Request) {.gcsafe.} =
+  {.gcsafe.}:
+    serveFile(request, clientDir() / "player.html",
+      "text/html; charset=utf-8")
+
+proc globalPageHandler(request: Request) {.gcsafe.} =
+  {.gcsafe.}:
+    serveFile(request, clientDir() / "global.html",
+      "text/html; charset=utf-8")
+
 proc clientAssetHandler(request: Request) {.gcsafe.} =
   {.gcsafe.}:
     let name = request.pathParams["name"]
@@ -417,6 +429,8 @@ proc websocketHandler(websocket: WebSocket, event: WebSocketEvent,
 
 proc buildRouter(replayMode: bool): Router =
   result.get("/healthz", healthzHandler)
+  result.get("/client/player", playerPageHandler)
+  result.get("/client/global", globalPageHandler)
   result.get("/client/replay", replayPageHandler)
   result.get("/client/@name", clientAssetHandler)
   result.get("/replay-data", replayDataHandler)

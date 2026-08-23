@@ -141,6 +141,15 @@ when isMainModule:
   let page = curl.get("http://127.0.0.1:" & $Port & "/client/replay", timeout = 5)
   checkEq(page.code, 200, "/client/replay serves the broadcast page")
   check("bossbar" in page.body, "which is raid's chrome")
+  ## The runner's HTTP contract check calls both of these before the episode
+  ## starts and fails certification on anything but a 200.
+  let seatPage = curl.get(
+    "http://127.0.0.1:" & $Port & "/client/player?slot=0&token=token-0",
+    timeout = 5)
+  checkEq(seatPage.code, 200, "/client/player serves the seat page")
+  let spectatorPage = curl.get(
+    "http://127.0.0.1:" & $Port & "/client/global", timeout = 5)
+  checkEq(spectatorPage.code, 200, "/client/global serves the spectator page")
   let asset = curl.get(
     "http://127.0.0.1:" & $Port & "/client/chrome_common.js", timeout = 5)
   checkEq(asset.code, 200, "/client/<asset> serves the shared chrome")
