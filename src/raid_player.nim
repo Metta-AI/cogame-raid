@@ -81,7 +81,17 @@ when isMainModule:
     (if scripted.len > 0: ", scripted " & scripted else: ", llm"), ")"
 
   while true:
-    let received = socket.receiveMessage()
+    ## whisky raises rather than returning none on both a close frame and a
+    ## half-read one, and mummy's `send` only queues: the game writes its
+    ## artifacts and exits, so a seat can lose the socket before its `done`
+    ## frame is flushed. The episode is over either way — a player that dies
+    ## here exits 1 and fails certification with `player_error`.
+    var received: Option[Message]
+    try:
+      received = socket.receiveMessage()
+    except CatchableError as error:
+      echo "raid player: connection ended (", error.msg, "), exiting"
+      break
     if received.isNone:
       echo "raid player: connection closed, exiting"
       break
