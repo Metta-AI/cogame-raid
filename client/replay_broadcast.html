@@ -1384,8 +1384,18 @@ body[data-embed] #board { top: 0; height: 100%; }
    ============================================================ */
 
 #bossbar {
+  /* #chrome is `inset: 0` because the nameplates and the endcard need the whole
+     stage, so the readouts that belong OVER THE BOARD have to clear the top
+     band themselves. Without the --topband term the boss bar started at y=6,
+     inside the scorebug, and painted "MELTDOWN SLAG FORGE" through the centre
+     clock's "TURN 1/54". */
   position: absolute; left: 50%; transform: translateX(-50%);
-  top: calc(4 * var(--u)); width: min(96%, calc(560 * var(--u)));
+  top: calc(var(--topband, 0px) + 4 * var(--u));
+  /* Centred, so it has to keep BOTH margins clear of the enrage clock parked
+     at the right edge -- at 96% of a 746 px embed the bar ran under it and the
+     boss HP percentage was cut off. --enragew is that clock's measured width. */
+  width: min(calc(100% - 2 * (var(--enragew, 0px) + 12 * var(--u))),
+             calc(560 * var(--u)));
   z-index: 6; pointer-events: none;
   font: 700 calc(11 * var(--u))/1.1 'Courier New', monospace;
   color: var(--paper, #f2e8d8);
@@ -1421,7 +1431,12 @@ body[data-embed] #board { top: 0; height: 100%; }
 #bossbar-label { text-align: center; }
 
 #enrageclock {
-  position: absolute; right: calc(6 * var(--u)); top: calc(4 * var(--u));
+  /* Same top-band clearance as #bossbar -- and it doubles as the fix for the
+     other collision here: softmax.com's CoworldReplayFrame draws its own 32 px
+     fullscreen control at top:8px right:8px OVER this iframe, and at y=6 the
+     enrage clock sat directly underneath it. */
+  position: absolute; right: calc(6 * var(--u));
+  top: calc(var(--topband, 0px) + 4 * var(--u));
   z-index: 7; pointer-events: none;
   font: 700 calc(13 * var(--u))/1 'Courier New', monospace;
   color: #f2e8d8; font-variant-numeric: tabular-nums;
@@ -1435,7 +1450,8 @@ body[data-embed] #board { top: 0; height: 100%; }
 
 #castbar {
   position: absolute; left: 50%; transform: translateX(-50%);
-  top: calc(56 * var(--u)); width: min(70%, calc(300 * var(--u)));
+  top: calc(var(--topband, 0px) + 56 * var(--u));
+  width: min(70%, calc(300 * var(--u)));
   z-index: 6; display: none; pointer-events: none; text-align: center;
   font: 700 calc(10 * var(--u))/1.2 'Courier New', monospace;
 }
@@ -1508,7 +1524,8 @@ body[data-embed] #board { top: 0; height: 100%; }
 #soakpip.empty { color: #ff5a3a; border-color: #ff5a3a; }
 
 #buffrow {
-  position: absolute; left: calc(6 * var(--u)); top: calc(4 * var(--u));
+  position: absolute; left: calc(6 * var(--u));
+  top: calc(var(--topband, 0px) + 4 * var(--u));
   z-index: 7; display: flex; gap: calc(4 * var(--u)); pointer-events: none;
 }
 #buffrow .chip {
@@ -2240,6 +2257,15 @@ body[data-embed] #board { top: 0; height: 100%; }
       // the board, the nameplates and the endcard stop above the scrubber.
       var transport = $('transport');
       if (transport) root.style.setProperty('--band', transport.offsetHeight + 'px');
+      // ...and the scorebug's at the top. #chrome and #board are both laid out
+      // from --topband, and nothing was ever setting it: it stayed at its 0px
+      // fallback, so the whole chrome layer started at y=0 UNDER the scorebug
+      // and the boss bar's phase labels ("MELTDOWN SLAG FORGE") were painted
+      // straight through the centre clock's "TURN 1/54".
+      var scorebug = $('scorebug');
+      if (scorebug) root.style.setProperty('--topband', scorebug.offsetHeight + 'px');
+      var enrage = $('enrageclock');
+      if (enrage) root.style.setProperty('--enragew', enrage.offsetWidth + 'px');
       // The board canvas shrinks by the band, so re-fit the core whenever its
       // box changes — it only listens for window resizes on its own, and a
       // stale viewport stretches the arena into an ellipse.
