@@ -1724,7 +1724,10 @@ body[data-embed] #board { top: 0; height: 100%; }
     var esc = function (text) {
       return String(text == null ? '' : text);
     };
-    var SPEEDS = [1, 2, 3, 4, 8, 16];
+    // The ladder is the sim's own PlaybackSpeeds when wire_constants.js is
+    // spliced in; the literal is the raw-file:// fallback and must match it.
+    var SPEEDS = (window.RAID_WIRE && window.RAID_WIRE.playbackSpeeds) ||
+      [0.5, 1, 2, 3, 4, 8, 16];
     var ALIASES = ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo'];
     var ROLE_ICON = { tank: '#4b7bec', healer: '#2ecc71', dps: '#f2c14e' };
     var meta = null;

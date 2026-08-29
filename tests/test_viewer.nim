@@ -111,6 +111,40 @@ proc testCoworldReplayBridge() =
   check("raid_mismatch_tick" in worker, "and reads the digest mismatch back")
   done("the coworld-replay bridge, including tell(\"ready\")")
 
+proc testTransportHasHalfSpeedAndSpacePause() =
+  ## Half speed is page-side: the Worker steps whole ticks (min 1), so the
+  ## rAF loop in static_replay.js carries the fraction as `frameDebt` and
+  ## only spends whole ticks. And Space toggles play on the one shipped page.
+  let shell = repoFile("replay-viewer/static_replay.js")
+  check("frameDebt" in shell, "the fractional-tick carry exists")
+  check("Math.max(0.5, Number(value) || 1)" in shell,
+    "and setSpeed accepts 0.5 instead of flooring at 1x")
+  check("if (frames >= 1)" in shell,
+    "so a half-speed frame that owes nothing advances nothing")
+  check("Math.max(1, frames)" notin shell,
+    "and nothing rounds a half tick back up to a whole one")
+
+  let page = repoFile("client/replay_broadcast.html")
+  check("[0.5, 1, 2, 3, 4, 8, 16]" in page,
+    "the page's speed ladder offers 0.5x")
+  check("window.RAID_WIRE.playbackSpeeds" in page,
+    "and prefers the sim's own ladder when the wire is spliced in")
+  check("event.key === ' '" in page and "$('btn-play').onclick()" in page,
+    "Space toggles playback")
+  check("event.preventDefault()" in page,
+    "without also scrolling the page")
+
+  let chrome = repoFile("client/chrome_common.js")
+  check("window.RAID_WIRE" in chrome,
+    "the shared chrome reads THIS game's wire constants")
+  check("[0.5, 1, 2, 3, 4, 8, 16]" in chrome, "with a matching fallback ladder")
+  check("0.5: '5'" in chrome, "and a command char for the half-speed chip")
+
+  let generator = repoFile("tools/gen_wire_constants.nim")
+  check("@[0.5] & PlaybackSpeeds" in generator,
+    "and the wire publishes the half-speed entry the sim cannot carry")
+  done("0.5x playback and Space-to-pause on the shipped viewer")
+
 proc testWireConstantsAreShared() =
   let generator = repoFile("tools/gen_wire_constants.nim")
   check("window.RAID_WIRE=" in generator,
@@ -183,6 +217,7 @@ when isMainModule:
   testLegibleAt360()
   testCoworldReplayBridge()
   testWireConstantsAreShared()
+  testTransportHasHalfSpeedAndSpacePause()
   testBundleRecipeIsComplete()
   testArtIsReal()
   testWasmHarness()

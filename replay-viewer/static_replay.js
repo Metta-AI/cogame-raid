@@ -57,6 +57,12 @@
     var accumulator = 0;
     var frameMs = 1000 / 24;
     var speed = 1;
+    // Fractional playback (0.5x) cannot be expressed in the Worker's advance
+    // message: it steps whole ticks, minimum one. So the page carries the
+    // fraction — every rAF adds `elapsedTicks * speed` to this debt and only
+    // the whole part is spent, which at 0.5x advances one tick every other
+    // display frame instead of rounding back up to 1x.
+    var frameDebt = 0;
     var playing = true;
     var workerDraws = 0;
     var fetchTimer = null;
@@ -119,10 +125,18 @@
       accumulator = Math.min(accumulator + Math.min(now - lastFrame, 250), 250);
       lastFrame = now;
       if (playing && !advanceInFlight && accumulator >= frameMs) {
-        var frames = Math.min(64, Math.floor(accumulator / frameMs) * speed);
-        accumulator -= Math.floor(accumulator / frameMs) * frameMs;
-        advanceInFlight = true;
-        worker.postMessage({ type: 'advance', frames: Math.max(1, frames) });
+        var elapsed = Math.floor(accumulator / frameMs);
+        accumulator -= elapsed * frameMs;
+        // Clamped on the debt, not on the spend, so a burst that overruns the
+        // Worker's 64-tick ceiling is dropped exactly as it was before rather
+        // than queued up as a backlog the next frames have to work off.
+        frameDebt = Math.min(64, frameDebt + elapsed * speed);
+        var frames = Math.floor(frameDebt);
+        frameDebt -= frames;
+        if (frames >= 1) {
+          advanceInFlight = true;
+          worker.postMessage({ type: 'advance', frames: frames });
+        }
       }
       requestAnimationFrame(animate);
     }
@@ -216,10 +230,16 @@
     return {
       start: start,
       stop: stop,
-      seek: function (tick) { if (worker) worker.postMessage({ type: 'seek', tick: tick }); },
+      seek: function (tick) {
+        frameDebt = 0;
+        if (worker) worker.postMessage({ type: 'seek', tick: tick });
+      },
       setPlaying: function (value) { playing = !!value; },
       isPlaying: function () { return playing; },
-      setSpeed: function (value) { speed = Math.max(1, value | 0); },
+      setSpeed: function (value) {
+        speed = Math.max(0.5, Number(value) || 1);
+        frameDebt = 0;
+      },
       getSpeed: function () { return speed; },
       zoomAt: function (factor, x, y) {
         if (worker) worker.postMessage({ type: 'view', action: 'zoom', factor: factor, x: x, y: y });
