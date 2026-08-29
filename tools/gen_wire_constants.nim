@@ -2,7 +2,7 @@
 ## the Nim sim can never drift apart on a tick rate, a cap or a colour.
 ## Piped into replay-viewer/dist/wire_constants.js by the viewer build.
 
-import std/[json]
+import std/[json, sequtils]
 import raid/[types, replay]
 
 when isMainModule:
@@ -16,7 +16,10 @@ when isMainModule:
     "mapWidth": MapWidth,
     "mapHeight": MapHeight,
     "pit": {"cx": PitCx, "cy": PitCy, "r": PitRadius},
-    "playbackSpeeds": PlaybackSpeeds,
+    # Half speed is a VIEWER concern, so it is prepended here rather than in
+    # types.nim: the step path is integer-only and its float-literal guard
+    # (tests/test_determinism.nim) forbids a 0.5 in that module.
+    "playbackSpeeds": @[0.5] & PlaybackSpeeds.mapIt(it.float),
     "telegraphKinds": ["cleave", "pour", "crucible"],
     "cleave": {
       "halfBrads": CleaveHalfBrads, "reach": CleaveReach,
