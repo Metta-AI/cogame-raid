@@ -84,7 +84,7 @@ def check_simultaneous_views(binary: Path) -> None:
             return json.loads(process.stdout.readline())
 
         request({"kind": "reset", "seed": "raid-simultaneous", "players": 5})
-        action = {"intent": intent, "target": "boss", "station": "ranged",
+        action = {"intent": intent, "target": 1, "station": "ranged",
                   "point_x": 617, "point_y": 329, "has_point": False,
                   "on_telegraph": "dodge"}
         next_views.append(request(

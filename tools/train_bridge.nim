@@ -1,7 +1,7 @@
 ## Persistent JSONL bridge for Metta RL and native PufferLib.
 ## nim c -d:release --path:src -o:raid-train-bridge tools/train_bridge.nim
 
-import std/[json, os]
+import std/[json, os, strutils]
 import raid/[arena, config, engine, llm, orders, scoring, sim, state, types,
              broadcast]
 
@@ -15,8 +15,7 @@ const
   Reactions = ["dodge", "hold", "soak", "spread"]
   Roles = ["tank", "healer", "dps"]
   Telegraphs = ["cleave", "pour", "crucible"]
-  Targets = ["", "boss", "Alpha", "Bravo", "Charlie", "Delta", "Echo",
-    "A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8"]
+  Targets = ["", "boss", "Alpha", "Bravo", "Charlie", "Delta", "Echo"]
 
 proc seedOf(value: string): int =
   var hash = 2166136261'u32
@@ -29,6 +28,24 @@ proc code(value: string, options: openArray[string]): int =
     if value == option: return index
   raise newException(ValueError, "unknown observation category: " & value)
 
+proc targetCode(value: string): int =
+  for index, option in Targets:
+    if value == option: return index
+  doAssert value.len > 1 and value[0] == 'A'
+  6 + parseInt(value[1 .. ^1])
+
+proc targetChoice(value: string, view: JsonNode): int =
+  if value in Targets: return targetCode(value)
+  for index in 0 ..< view["adds"].len:
+    if view["adds"][index]["id"].getStr() == value: return 7 + index
+  raise newException(ValueError, "teacher targeted an unseen add: " & value)
+
+proc choiceTarget(choice: int, view: JsonNode): string =
+  if choice < Targets.len: return Targets[choice]
+  let index = choice - Targets.len
+  if index < view["adds"].len: view["adds"][index]["id"].getStr()
+  else: ""
+
 proc heads(): JsonNode =
   result = newJArray()
   for name in ["intent", "target", "station", "point_x", "point_y",
@@ -38,7 +55,7 @@ proc heads(): JsonNode =
     of "intent":
       for value in Intents: options.add(%value)
     of "target":
-      for value in Targets: options.add(%value)
+      for value in 0 .. 14: options.add(%value)
     of "station":
       for value in Stations: options.add(%value)
     of "point_x":
@@ -77,12 +94,12 @@ proc values(view: JsonNode, variant: string, seat: int): JsonNode =
   for field in ["hp", "max_hp", "shield", "threat"]:
     result.add(%me[field].number())
   result.add(%(if me["alive"].getBool(): 1 else: 0))
-  result.add(%code(me["attacking"].getStr(), Targets))
+  result.add(%targetCode(me["attacking"].getStr()))
   for field in ["mana", "max_mana"]: result.add(%me.numeric(field))
   for field in ["taunt", "heal", "shield", "interrupt", "attack"]:
     result.add(%me["cooldowns_s"].numeric(field))
   result.add(%(if me.hasKey("casting"): 1 else: 0))
-  result.add(%(if me.hasKey("casting"): code(me["casting"]["target"].getStr(), Targets)
+  result.add(%(if me.hasKey("casting"): targetCode(me["casting"]["target"].getStr())
     else: 0))
   result.add(%(if me.hasKey("casting"): me["casting"]["remaining_s"].number()
     else: 0.0))
@@ -90,7 +107,7 @@ proc values(view: JsonNode, variant: string, seat: int): JsonNode =
   result.addNumbers(boss["pos"])
   for field in ["facing_brads", "hp", "max_hp", "hp_pct", "phase"]:
     result.add(%boss[field].number())
-  result.add(%code(boss["target"].getStr(), Targets))
+  result.add(%targetCode(boss["target"].getStr()))
   result.add(%(if boss["enraged"].getBool(): 1 else: 0))
   result.add(%(if boss["buffs"]["feed"].getBool(): 1 else: 0))
   result.add(%boss["buffs"]["spill_stacks"].number())
@@ -106,7 +123,7 @@ proc values(view: JsonNode, variant: string, seat: int): JsonNode =
     for field in ["hp", "max_hp", "shield", "threat"]:
       result.add(%actor[field].number())
     result.add(%(if actor["alive"].getBool(): 1 else: 0))
-    result.add(%code(actor["attacking"].getStr(), Targets))
+    result.add(%targetCode(actor["attacking"].getStr()))
     result.add(%code(actor["last_intent"].getStr(), Intents))
     result.add(%(if actor["say"].getStr().len > 0: 1 else: 0))
   let adds = view["adds"]
@@ -115,10 +132,10 @@ proc values(view: JsonNode, variant: string, seat: int): JsonNode =
   for index in 0 ..< 8:
     if index < adds.len:
       let row = adds[index]
-      result.add(%code(row["id"].getStr(), Targets))
+      result.add(%targetCode(row["id"].getStr()))
       result.addNumbers(row["pos"])
       for field in ["hp", "max_hp"]: result.add(%row[field].number())
-      result.add(%code(row["target"].getStr(), Targets))
+      result.add(%targetCode(row["target"].getStr()))
     else:
       for _ in 0 ..< 6: result.add(%0)
   let pools = view["pools"]
@@ -157,18 +174,19 @@ proc values(view: JsonNode, variant: string, seat: int): JsonNode =
     for _ in 0 ..< 6: result.add(%0)
   else:
     result.add(%code(last["intent"].getStr(), Intents))
-    result.add(%code(last["target"].getStr(), Targets))
+    result.add(%targetCode(last["target"].getStr()))
     result.add(%code(last["station"].getStr(), Stations))
     result.addNumbers(last["point"])
     result.add(%code(last["on_telegraph"].getStr(), Reactions))
 
-proc action(order: Order): JsonNode =
-  %*{"intent": $order.intent, "target": order.target,
+proc action(order: Order, view: JsonNode): JsonNode =
+  %*{"intent": $order.intent, "target": targetChoice(order.target, view),
     "station": $order.station, "point_x": order.px, "point_y": order.py,
     "has_point": order.hasPoint, "on_telegraph": $order.onTelegraph}
 
-proc hostedOrder(candidate: JsonNode): JsonNode =
-  result = %*{"intent": candidate["intent"], "target": candidate["target"],
+proc hostedOrder(candidate, view: JsonNode): JsonNode =
+  result = %*{"intent": candidate["intent"],
+    "target": choiceTarget(candidate["target"].getInt(), view),
     "station": candidate["station"], "on_telegraph": candidate["on_telegraph"]}
   if candidate["has_point"].getBool():
     result["point"] = %*[candidate["point_x"], candidate["point_y"]]
@@ -234,14 +252,15 @@ when isMainModule:
     of "teacher":
       doAssert not game.done
       response = %*{"response": $action(
-        scriptedDecision(game, active[index], skStalwart).order)}
+        scriptedDecision(game, active[index], skStalwart).order,
+        views[active[index]])}
     of "step":
       doAssert not game.done and request["decision_id"].getInt() == id
       let candidate = parseJson(request["response"].getStr())
       for head in heads():
         doAssert candidate[head["name"].getStr()] in head["choices"]
       let seat = active[index]
-      decisions.add(Decision(order: parseOrder(candidate.hostedOrder(),
+      decisions.add(Decision(order: parseOrder(candidate.hostedOrder(views[seat]),
         game.cogs[seat].role), source: osLlm))
       inc index
       inc id

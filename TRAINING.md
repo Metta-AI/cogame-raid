@@ -48,6 +48,8 @@ presence, and telegraph reaction. The production order parser, repairer,
 encounter driver, and simulator execute each action. The game gives every
 seat the same score; the bridge also supplies bounded utility for learning.
 Numeric features record callout presence but omit the free-form callout text.
+The target head selects a visible add slot, so new add IDs remain selectable
+across waves.
 
 ```sh
 nim c -d:release --path:src -o:/tmp/raid-train-bridge tools/train_bridge.nim
