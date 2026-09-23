@@ -36,3 +36,26 @@ These examples distill the scripted teacher; they do not establish stronger
 league play.
 One CPU optimizer step per variant with a local tiny model included every
 example and reduced heldout loss, verifying the Metta post-training path.
+
+## Numeric training
+
+The persistent bridge covers Default and Sprint. It exposes 292 fixed
+features from each seat's `seatView`: boss state and telegraphs, living raid
+members, adds, hazards, cooldowns, meters, and the seat's last order. It
+snapshots every living seat before applying the simultaneous orders. Seven
+action heads encode intent, target, station, exact point coordinates, point
+presence, and telegraph reaction. The production order parser, repairer,
+encounter driver, and simulator execute each action. The game gives every
+seat the same score; the bridge also supplies bounded utility for learning.
+Numeric features record callout presence but omit the free-form callout text.
+
+```sh
+nim c -d:release --path:src -o:/tmp/raid-train-bridge tools/train_bridge.nim
+python3 tools/test_train_bridge.py /tmp/raid-train-bridge
+```
+
+From Metta, use `recipes.external.coworld_metta_rl.train` or
+`recipes.external.coworld.train` with command
+`["/tmp/raid-train-bridge", "<source>/coworld_manifest_template.json", "default"]`
+and `players=5`. Replace `default` with `sprint` for the second variant.
+Set a finite timestep limit for either trainer.
