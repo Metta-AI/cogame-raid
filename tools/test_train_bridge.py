@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 
-def play(binary: Path, variant: str, teacher: bool) -> None:
+def play(binary: Path, variant: str, teacher: bool, seed: str | None = None) -> None:
     manifest = Path(__file__).resolve().parent.parent / "coworld_manifest_template.json"
     process = subprocess.Popen(
         [str(binary), str(manifest), variant],
@@ -25,9 +25,10 @@ def play(binary: Path, variant: str, teacher: bool) -> None:
         return json.loads(process.stdout.readline())
 
     try:
-        observation = request({"kind": "reset", "seed": f"raid-{variant}-{teacher}", "players": 5})
+        observation = request({"kind": "reset", "seed": seed or f"raid-{variant}-{teacher}", "players": 5})
         widths = set()
         decisions = 0
+        saw_late_add = False
         while observation["kind"] == "decision":
             encoding = request({"kind": "encode"})
             assert encoding["decision_id"] == observation["decision_id"]
@@ -37,6 +38,7 @@ def play(binary: Path, variant: str, teacher: bool) -> None:
             for head in heads:
                 assert observation["action_schema"]["properties"][head["name"]]["enum"] == head["choices"]
             view = observation["semantic_view"]
+            saw_late_add |= any(int(add["id"][1:]) > 8 for add in view["adds"])
             assert "seed" not in view and "your_last_order" in view
             assert "name" not in view["you"] and len(view["raid"]) == 5
             if teacher:
@@ -58,6 +60,8 @@ def play(binary: Path, variant: str, teacher: bool) -> None:
         assert len(set(utilities.values())) == 1
         assert -1 <= utilities["0"] <= 1
         assert widths == {292}
+        if seed == "0":
+            assert saw_late_add
         print(variant, "teacher" if teacher else "random", decisions, widths.pop(), "features")
     finally:
         process.stdin.close()
@@ -102,3 +106,4 @@ if __name__ == "__main__":
     for variant in ("default", "sprint"):
         for teacher in (True, False):
             play(binary, variant, teacher)
+    play(binary, "default", True, seed="0")
