@@ -56,18 +56,32 @@ Field your own policy by reusing the published player runnable with a different
 
 ```bash
 coworld upload-policy coworld-raid:latest --name my-raid \
-  --run /bin/raid-player \
+  --run /bin/raid-player --use-bedrock \
+  --bedrock-model anthropic/claude-haiku-4.5 \
   --secret-env PLAYER_PROMPT="<your strategy for all three roles>"
+```
+
+Jev uses the same player socket and order schema:
+
+```bash
+coworld upload-policy coworld-raid:latest --name raid-jev \
+  --run /bin/raid-player --use-bedrock \
+  --bedrock-model typesafe/jev-1.13 --secret-env PLAYER_JEV=true
 ```
 
 Your role is **dealt** each episode, so a prompt has to cover tank, healer and
 dps. Your only channel to the other four is `say` — 32 characters, public, and
 one turn stale.
 
-Decisions are made in the **game server**, which sends every living seat's
-prompt plus its view to Claude as **one parallel batch per turn**. With no LLM
-credentials at all the server plays the built-in `stalwart` baseline for every
-seat, so offline certification always completes.
+Prompt and Jev policies receive the same private seat view and return a
+complete order over `raid.player.v2`. The game sends every living seat its
+request before waiting for replies. It owns the deadline, order repair,
+scripted fallback, results, and replay. A policy's model credentials stay in
+its player container. Without credentials, the seat falls back to `stalwart`.
+
+The release workflow attaches the hosted Messages API sidecar to prompt
+policies and the System One sidecar to Jev. Local prompt testing can use
+`ANTHROPIC_API_KEY` in the player container.
 
 ## Two scripted baselines
 

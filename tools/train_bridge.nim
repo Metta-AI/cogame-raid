@@ -2,7 +2,7 @@
 ## nim c -d:release --path:src -o:raid-train-bridge tools/train_bridge.nim
 
 import std/[json, os, strutils]
-import raid/[arena, config, engine, llm, orders, scoring, sim, state, types,
+import raid/[arena, baselines, config, engine, llm, orders, scoring, sim, state, types,
              broadcast]
 
 const
@@ -252,7 +252,7 @@ when isMainModule:
     of "teacher":
       doAssert not game.done
       response = %*{"response": $action(
-        scriptedDecision(game, active[index], skStalwart).order,
+        scriptedOrder(game, active[index], skStalwart),
         views[active[index]])}
     of "step":
       doAssert not game.done and request["decision_id"].getInt() == id

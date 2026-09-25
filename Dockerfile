@@ -1,6 +1,6 @@
 # Raid game + player image. One image, two entrypoints:
 #   /bin/raid         - the game server (default)
-#   /bin/raid-player  - the thin policy-delivery player
+#   /bin/raid-player  - prompt, Jev or scripted policy
 FROM debian:bookworm-slim AS build
 
 RUN apt-get update && \

@@ -2,61 +2,71 @@
 
 Two protocols and one file format:
 
-- **`raid.player.v1`** — JSON text frames over the websocket named by
+- **`raid.player.v2`** — JSON text frames over the websocket named by
   `COWORLD_PLAYER_WS_URL` (already carrying `?slot=N&token=T`).
 - **`raid.global.v1`** — the spectator snapshot pushed over `/global`.
 - **`raid.replay.v1`** — the strict UTF-8 JSON replay written to
   `COGAME_SAVE_REPLAY_URI`.
 
-## `raid.player.v1`
+## `raid.player.v2`
 
-A raid policy is a prompt. The player container's only job is to deliver it: the
-**game server** makes every decision, because the Bedrock sidecar credentials
-and the `anthropic_api_key` coworld secret are injected into the game pod and
-"one parallel batch per turn" is a game-server property.
+The game sends each living seat its private view over the normal player socket.
+Prompt and Jev players return complete orders. All living seats receive their
+requests before the game waits, preserving simultaneous decisions. The game
+owns order validation and repair, bounded retries, scripted fallback, results,
+and replay. Model credentials and operator prompts stay in player containers.
 
-### player → game (exactly once, on connect)
+### player → game
+
+On connect:
 
 ```json
-{"type": "register",
- "prompt": "<strategy text or empty>",
- "scripted": "stalwart" | "greenhorn" | null,
- "policy": "<free label, <= 48 runes>"}
+{"type":"register", "kind":"scripted|prompt|jev",
+ "scripted":"stalwart|greenhorn|null", "policy":"<label, <=48 runes>"}
 ```
 
-`prompt` is capped at 4000 runes at the transport (over-long is truncated, not
-rejected) and is never written to the replay or the results. A seat that
-registers with neither field, or never registers at all, plays the `stalwart`
-baseline. `PLAYER_SCRIPTED` parsing: `stalwart`/`1`/`true`/`yes`/`default` →
-stalwart, `greenhorn`/`green`/`novice` → greenhorn, anything else → none.
+A scripted policy names its baseline. Prompt and Jev policies send a null
+baseline. A seat that never registers plays `stalwart` and is reported through
+`COGAME_PLAYER_FAILURE_URI`.
+
+For each decision request, the player replies with exactly the matching `id`:
+
+```json
+{"type":"action", "id":35, "action":{
+ "intent":"heal_target", "target":"Alpha", "station":"ranged",
+ "point":[617,180], "on_telegraph":"dodge", "note":"", "say":""}}
+```
+
+A player unable to decide sends `{"type":"action","id":35,
+"cause":"no_credentials|parse_error|transport_error","error":"<detail>"}`.
+The game retries invalid replies once within the configured turn budget, then
+uses `stalwart`. A missing credential disables further model requests for that
+seat. Late replies with an old `id` are ignored.
 
 ### game → player
 
 On connect:
 
 ```json
-{"type": "welcome", "protocol": "raid.player.v1", "slot": 2,
- "alias": "Charlie", "turn_seconds": 5.0}
+{"type":"welcome", "protocol":"raid.player.v2", "slot":2,
+ "alias":"Charlie", "turn_seconds":5.0}
 ```
 
-Once per decision turn, to every seat (informational — the seat is not required
-to answer):
+Each living seat receives a decision request with its own view and the game
+rules. The first attempt and retry are bounded by `timeout_seconds`:
 
 ```json
-{"type": "turn", "turn": 17, "tick": 2040, "phase": 2,
- "role": "healer", "view": { … }, "order_source": "llm"}
+{"type":"decision", "id":35, "slot":2, "view":{...},
+ "system":"<rules and order schema>", "retry":false,
+ "timeout_seconds":7}
 ```
 
-A seat that dies receives one turn frame with `view.you.alive == false` and
-nothing further until `done`.
+After applying the orders, the game sends an informational `turn` frame with
+the private view and selected order source. A dead seat receives one final turn
+frame with `view.you.alive == false` and no further decisions.
 
-At the end, then close:
-
-```json
-{"done": true, "result": { …the results document… }}
-```
-
-The done broadcast is bounded at 3.0 s per seat.
+At episode end the game sends `{"done":true,"result":{...}}`, then closes.
+The final broadcast is bounded at 3 seconds per seat.
 
 ### The per-seat view
 

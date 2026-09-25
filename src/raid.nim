@@ -56,8 +56,7 @@ when isMainModule:
       " boss=", config.bossMaxHp,
       " enrage=", config.enrageTicks,
       " maxTicks=", config.maxTicks,
-      " map=", config.mapPath,
-      " model=", config.model
+      " map=", config.mapPath
     try:
       runGameServer(config, runtimeConfig)
     except CatchableError as error:

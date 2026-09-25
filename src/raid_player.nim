@@ -1,21 +1,17 @@
-## Raid player: a policy is just a prompt.
-##
-## The player container is deliberately thin. It connects, sends ONE register
-## frame carrying its prompt (or its baseline name), and thereafter only
-## receives: every decision is made inside the game server, which sends this
-## seat's prompt plus its view to Claude once every five seconds, batched with
-## the other four seats.
+## Raid player: prompt, Jev and scripted policies use one seat socket.
 ##
 ## PLAYER_SCRIPTED=stalwart (or 1) registers the seat as the built-in stalwart
 ## baseline instead; PLAYER_SCRIPTED=greenhorn as the weaker one. The server
-## plays those deterministically, no LLM.
+## plays scripted baselines deterministically.
 ##
 ## To field your own policy, reuse this image and set PLAYER_PROMPT:
 ##   coworld upload-policy <raid-image> --name my-raid \
 ##     --run /bin/raid-player --secret-env PLAYER_PROMPT="<your strategy>"
 
 import std/[json, options, os, strutils]
+import curly
 import whisky
+import raid/[llm, orders, types, jev_policy]
 
 const
   ConnectAttempts = 5
@@ -41,23 +37,20 @@ when isMainModule:
     quit("COWORLD_PLAYER_WS_URL is not set", 1)
   var prompt = getEnv("PLAYER_PROMPT")
   let scripted = getEnv("PLAYER_SCRIPTED").strip()
-  if prompt.strip().len == 0 and scripted.len == 0:
-    ## Deliberate departure from the design note's "a seat that sets neither
-    ## defaults to PLAYER_SCRIPTED=stalwart". That rule is the SERVER's, and
-    ## it still holds (`server.nim:376-378`): a seat that registers with
-    ## neither field, or never registers, is seated as stalwart. But the
-    ## manifest ships this binary with no env as `raid-player`, "the
-    ## reference raid policy", so a bare container that registered as
-    ## `scripted` would be an LLM-free seat wearing an LLM policy's name.
-    ## It registers with the reference prompt instead, and the server's
-    ## default stays the path for a seat that never gets that far.
+  let jev = getEnv("PLAYER_JEV").strip() == "true"
+  if prompt.strip().len == 0 and scripted.len == 0 and not jev:
     prompt = DefaultPrompt
   let policy = getEnv("PLAYER_POLICY_LABEL")
+  let kind = if scripted.len > 0: "scripted"
+    elif jev: "jev"
+    else: "prompt"
+  let client = if kind == "prompt": newLlmClient()
+    else: nil
 
   proc registerFrame(): string =
     $ %*{
       "type": "register",
-      "prompt": prompt,
+      "kind": kind,
       "scripted": scripted,
       "policy": policy
     }
@@ -77,8 +70,7 @@ when isMainModule:
       sleep(ConnectBackoffMs * attempt)
 
   socket.send(registerFrame())
-  echo "raid player: registered (", prompt.len, " prompt chars",
-    (if scripted.len > 0: ", scripted " & scripted else: ", llm"), ")"
+  echo "raid player: registered as ", kind
 
   while true:
     ## whisky raises rather than returning none on both a close frame and a
@@ -112,6 +104,37 @@ when isMainModule:
         socket.send(registerFrame())
       of "turn":
         discard
+      of "decision":
+        var reply = %*{"type": "action", "id": payload["id"]}
+        if kind == "prompt" and client.disabled or
+            kind == "jev" and not jevConfigured():
+          reply["cause"] = %"no_credentials"
+          reply["error"] = %"no credentials"
+        else:
+          try:
+            if kind == "jev":
+              reply["action"] = chooseJevOrder(payload["view"],
+                payload["slot"].getInt(),
+                payload["timeout_seconds"].getInt())
+            else:
+              var user = userPrompt(payload["view"], prompt)
+              if payload["retry"].getBool():
+                user.add(RetryHint)
+              let request = client.requestFor(payload["system"].getStr(), user)
+              let response = client.curl.post(request.url, request.headers,
+                request.body, payload["timeout_seconds"].getInt())
+              reply["action"] = extractJsonObject(
+                client.textOf(response, "", request.url))
+          except LlmError as error:
+            reply["cause"] = %"transport_error"
+            reply["error"] = %error.msg
+          except RaidError as error:
+            reply["cause"] = %"parse_error"
+            reply["error"] = %error.msg
+          except CatchableError as error:
+            reply["cause"] = %"transport_error"
+            reply["error"] = %error.msg
+        socket.send($reply)
       else:
         discard
     except CatchableError as error:

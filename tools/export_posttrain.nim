@@ -2,7 +2,8 @@
 ## Usage: nim r --path:src tools/export_posttrain.nim OUTPUT GAMES [FIRST_SEED] [VARIANT]
 
 import std/[json, os, osproc, strutils]
-import raid/[arena, config, engine, llm, orders, scoring, state, types]
+import raid/[arena, baselines, broadcast, config, engine, llm, orders,
+  scoring, state, types]
 
 const OperatorPrompt = "Choose legal orders that maximize the team's score over the complete encounter."
 const Variants = ["default", "sprint"]
@@ -46,7 +47,8 @@ when isMainModule:
     var rows: seq[string]
     let decide: Decider = proc (view: Sim, seats: seq[int]): seq[Decision] =
       for seat in seats:
-        let teacher = scriptedDecision(view, seat, skStalwart)
+        let teacher = Decision(order: scriptedOrder(view, seat, skStalwart),
+          source: osScripted)
         var completion = orderToJson(teacher.order)
         if not teacher.order.hasPoint:
           completion.delete("point")
@@ -59,7 +61,7 @@ when isMainModule:
           "decision_id": rows.len,
           "prompt": [
             {"role": "system", "content": SystemPrompt},
-            {"role": "user", "content": userPrompt(view, seat,
+            {"role": "user", "content": userPrompt(seatView(view, seat),
               OperatorPrompt)}
           ],
           "completion": [{"role": "assistant", "content": $completion}],

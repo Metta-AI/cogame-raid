@@ -107,10 +107,11 @@ when isMainModule:
   check(welcome.isSome, "the seat receives a frame")
   let hello = parseJson(welcome.get().data)
   checkEq(hello["type"].getStr(), "welcome", "the welcome frame")
-  checkEq(hello["protocol"].getStr(), "raid.player.v1", "names the protocol")
+  checkEq(hello["protocol"].getStr(), "raid.player.v2", "names the protocol")
   checkEq(hello["slot"].getInt(), 0, "and the slot")
   checkEq(hello["alias"].getStr(), "Alpha", "and the alias, never a real name")
-  player.send($ %*{"type": "register", "scripted": "stalwart",
+  player.send($ %*{"type": "register", "kind": "scripted",
+    "scripted": "stalwart",
     "policy": "test-policy"})
   done("register is accepted")
 

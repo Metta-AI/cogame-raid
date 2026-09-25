@@ -44,13 +44,11 @@ DESCRIPTION = (
     "arrives one turn stale. Score is boss health removed divided by time "
     "spent, in units of the enrage timer (1.0 = killed it exactly on the "
     "timer), and every seat carries the identical number, so a healer who "
-    "never touches the boss can be a champion. The game is LLM-driven: the "
-    "server sends every living seat's prompt plus its view to Claude as ONE "
-    "parallel batch per turn, so A POLICY IS JUST A PROMPT - build one by "
-    "reusing the published player runnable and setting PLAYER_PROMPT. Two "
-    "scripted baselines (stalwart and greenhorn) play any seat that registers "
-    "as scripted, and every seat when no LLM credentials are available, so "
-    "episodes always complete."
+    "never touches the boss can be a champion. Prompt and Jev policies "
+    "receive private seat views through the ordinary player socket and "
+    "return complete orders. The game owns timing, order repair, fallback, "
+    "results and replay. Stalwart and greenhorn are scripted baselines. "
+    "Seats without model credentials fall back to stalwart."
 )
 
 CONFIG_SCHEMA = {
@@ -122,13 +120,6 @@ CONFIG_SCHEMA = {
         "mapPath": {
             "description": "Authored map spec name under data/. Raid ships one floor.",
             "type": "string", "default": "foundry",
-        },
-        "model": {
-            "description": "Claude model that drives every LLM seat.",
-            "type": "string", "default": "claude-sonnet-5",
-        },
-        "maxOutputTokens": {
-            "type": "integer", "minimum": 64, "maximum": 2000, "default": 900,
         },
         "llmAttemptSeconds": {
             "description": "First-attempt per-seat deadline. llmAttemptSeconds + llmRetrySeconds must be <= turnBudgetSeconds; asserted at config load.",
@@ -236,46 +227,20 @@ RESULTS_SCHEMA = {
 }
 
 PLAYER_PROTOCOL = (
-    "raid.player.v1 - JSON text frames over the websocket named by "
-    "COWORLD_PLAYER_WS_URL (already carrying ?slot=N&token=T). A raid policy is "
-    "a prompt: the player container's only job is to deliver it, because every "
-    "decision is made inside the game server, which sends each living seat's "
-    "prompt plus its view to Claude as ONE parallel batch every five seconds. "
-    "player->game, exactly once on connect: "
-    "{\"type\":\"register\",\"prompt\":str,\"scripted\":\"stalwart\"|"
-    "\"greenhorn\"|null,\"policy\":str}. `prompt` is capped at 4000 runes at "
-    "the transport and is never written to the replay or the results; a seat "
-    "that registers with neither field, or never registers at all, plays the "
-    "stalwart baseline and the no-show is reported to "
-    "COGAME_PLAYER_FAILURE_URI. game->player: "
-    "{\"type\":\"welcome\",\"protocol\":\"raid.player.v1\",\"slot\":N,"
-    "\"alias\":\"Alpha\"..\"Echo\",\"turn_seconds\":5.0} on connect; "
-    "{\"type\":\"turn\",\"turn\":int,\"tick\":int,\"phase\":1|2|3,"
-    "\"role\":\"tank\"|\"healer\"|\"dps\",\"view\":{...},"
-    "\"order_source\":\"llm\"|\"scripted\"|\"fallback\"} once per decision "
-    "turn - informational, the seat is not required to answer; and "
-    "{\"done\":true,\"result\":{...the results document...}} at the end, "
-    "bounded at 3.0 s per seat, after which the player should exit. The view "
-    "carries turn/of/tick/phase/phase_name, clock{elapsed_s,enrage_in_s,"
-    "hard_end_in_s}, you{alias,role,pos,alive,hp,max_hp,shield,threat,"
-    "attacking,cooldowns_s,(mana,max_mana for a healer),(casting)}, "
-    "boss{name,pos,facing_brads,hp,max_hp,hp_pct,phase,target,enraged,"
-    "buffs{feed,spill_stacks},(casting),next_s{cleave,pour,overload,adds}}, "
-    "telegraphs[], raid[5], adds[], pools[], callouts[] (the other seats' "
-    "32-rune `say` strings from the PREVIOUS turn - the raid's only channel), "
-    "meters{damage_to_boss,healing_done} and your_last_order. Hidden from every "
-    "seat: the seed, other seats' private notes and full orders, the next pour "
-    "draw, every PLAYER_PROMPT, and the real player names behind the aliases. "
-    "The order object a policy is asked for is "
-    "{\"intent\":str,\"target\":str|null,\"station\":\"melee\"|\"ranged\"|"
-    "\"spread\"|\"edge\"|\"point\"|\"soak\",\"point\":[x,y],"
-    "\"on_telegraph\":\"dodge\"|\"hold\"|\"soak\"|\"spread\","
-    "\"note\":<=160 runes,\"say\":<=32 runes}; intents are role-gated (tank: "
-    "tank_boss taunt pick_up_adds kite soak wait; healer: heal_lowest "
-    "heal_target shield_target conserve soak wait; dps: burn_boss kill_adds "
-    "interrupt assist_target soak wait) and anything illegal is repaired "
-    "against the world rather than rejected. Every recorded string is "
-    "truncated on RUNE boundaries."
+    "raid.player.v2 - JSON text frames over COWORLD_PLAYER_WS_URL. "
+    "player->game: {\"type\":\"register\",\"kind\":\"scripted|prompt|jev\","
+    "\"scripted\":\"stalwart|greenhorn|null\",\"policy\":str}; "
+    "game->player: {\"type\":\"decision\",\"id\":int,\"slot\":int,"
+    "\"view\":object,\"system\":str,\"retry\":bool,"
+    "\"timeout_seconds\":int}; player->game: "
+    "{\"type\":\"action\",\"id\":int,\"action\":order} or "
+    "{\"type\":\"action\",\"id\":int,\"cause\":str,"
+    "\"error\":str}. The game sends every living seat's private view "
+    "concurrently, validates and repairs orders, and owns bounded retries, "
+    "fallback, results and replay. The player owns prompt or Jev inference. "
+    "The order has intent, target, station, point, on_telegraph, note and say. "
+    "After each turn the game sends an informational turn frame; at the end "
+    "it sends {\"done\":true,\"result\":object}. See docs/PROTOCOL.md."
 )
 
 GLOBAL_PROTOCOL = (
@@ -326,7 +291,7 @@ def variant(vid, name, description, boss, enrage, max_ticks, wall):
     }
 
 
-def player_entry(pid, name, description, scripted):
+def player_entry(pid, name, description, scripted, jev=False):
     entry = {
         "id": pid, "name": name, "type": "player", "description": description,
         "image": "{{RAID_IMAGE}}", "run": ["/bin/raid-player"],
@@ -338,6 +303,8 @@ def player_entry(pid, name, description, scripted):
     }
     if scripted:
         entry["env"] = {"PLAYER_SCRIPTED": scripted}
+    if jev:
+        entry["env"] = {"PLAYER_JEV": "true"}
     return entry
 
 
@@ -358,10 +325,6 @@ def build():
                 "type": "game",
                 "image": "{{RAID_IMAGE}}",
                 "run": ["/bin/raid"],
-                "env": {
-                    "ANTHROPIC_API_KEY_URI":
-                        "secret://coworld/raid/anthropic_api_key"
-                },
                 "source_url": SOURCE_URL,
             },
             "config_schema": CONFIG_SCHEMA,
@@ -397,10 +360,13 @@ def build():
                 "greenhorn"),
             player_entry(
                 "raid-player", "Raid Prompt Player",
-                "The reference raid policy: delivers its PLAYER_PROMPT to the "
-                "game and spectates until the final frame. Field your own by "
-                "uploading this same image with a different PLAYER_PROMPT.",
+                "The reference prompt policy answers private decision views "
+                "with complete orders. Field your own with PLAYER_PROMPT.",
                 None),
+            player_entry(
+                "jev", "Raid Jev Player",
+                "Jev selects complete orders from the same private seat view.",
+                None, jev=True),
         ],
         "variants": [
             variant("default", "SMELTER-9 (5 cogs, 240 s enrage)",
@@ -435,9 +401,9 @@ def build():
                 # strong baseline so the fixture still reaches a kill.
                 {"player_id": "baseline"},
                 {"player_id": "baseline"},
-                {"player_id": "baseline"},
                 {"player_id": "greenhorn"},
                 {"player_id": "raid-player"},
+                {"player_id": "jev"},
             ],
         },
     }
