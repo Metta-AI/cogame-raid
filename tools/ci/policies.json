@@ -27,5 +27,13 @@
     "env": {
       "PLAYER_SCRIPTED": "greenhorn"
     }
+  },
+  {
+    "name": "raid-jev",
+    "run": "/bin/raid-player",
+    "env": {
+      "PLAYER_JEV": "true",
+      "PLAYER_POLICY_LABEL": "jev"
+    }
   }
 ]

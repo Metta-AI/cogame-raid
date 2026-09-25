@@ -154,7 +154,7 @@ type
 
   ScriptKind* = enum
     ## Which scripted baseline drives a seat. `PLAYER_SCRIPTED` selects one;
-    ## a seat that names neither a prompt nor a baseline plays `stalwart`.
+    ## a seat that never registers plays `stalwart`.
     skNone = "none"
     skStalwart = "stalwart"
     skGreenhorn = "greenhorn"

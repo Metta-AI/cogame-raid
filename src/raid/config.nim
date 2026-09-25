@@ -23,8 +23,6 @@ type
     episodeTimeoutSeconds*: int
     playerConnectTimeoutSeconds*: float
     mapPath*: string
-    model*: string
-    maxOutputTokens*: int
     llmAttemptSeconds*: float
     llmRetrySeconds*: float
     showPlayerLabels*: bool
@@ -43,8 +41,6 @@ proc defaultGameConfig*(): GameConfig =
     episodeTimeoutSeconds: 1200,
     playerConnectTimeoutSeconds: 90.0,
     mapPath: "foundry",
-    model: "claude-sonnet-5",
-    maxOutputTokens: 900,
     llmAttemptSeconds: 6.5,
     llmRetrySeconds: 3.0,
     showPlayerLabels: true,
@@ -142,10 +138,6 @@ proc update*(config: var GameConfig, configJson: string) =
       node["player_connect_timeout_seconds"].getFloat()
   if node.hasKey("mapPath"):
     config.mapPath = node["mapPath"].getStr()
-  if node.hasKey("model"):
-    config.model = node["model"].getStr()
-  if node.hasKey("maxOutputTokens"):
-    config.maxOutputTokens = node["maxOutputTokens"].getInt()
   if node.hasKey("llmAttemptSeconds"):
     config.llmAttemptSeconds = node["llmAttemptSeconds"].getFloat()
   if node.hasKey("llmRetrySeconds"):

@@ -51,6 +51,10 @@ Numeric features record callout presence but omit the free-form callout text.
 The target head selects a visible add slot, so new add IDs remain selectable
 across waves.
 
+Prompt, Jev, and trained policies receive the same private seat view and send
+complete orders through `raid.player.v2`. The game owns role legality, order
+repair, turn deadlines, scripted fallback, results, and replay.
+
 ```sh
 nim c -d:release --path:src -o:/tmp/raid-train-bridge tools/train_bridge.nim
 python3 tools/test_train_bridge.py /tmp/raid-train-bridge

@@ -2,7 +2,7 @@
 ##
 ## Endpoints:
 ##   GET /healthz                    - liveness
-##   GET /client/player              - seat page (view-only; policies are prompts)
+##   GET /client/player              - seat page
 ##   GET /client/global              - spectator page
 ##   GET /client/replay              - the broadcast replay page
 ##   GET /client/<asset>             - chrome_common.js, broadcast_core.js
@@ -10,40 +10,46 @@
 ##   WS  /player?slot=N&token=T      - the player protocol
 ##   WS  /global                     - spectator snapshots
 ##
-## Player protocol (raid.player.v1), JSON text frames:
-##   player -> game: {"type":"register","prompt":str,"scripted":str|null,
-##                    "policy":str}   exactly once, on connect
-##   game -> player: {"type":"welcome","protocol":"raid.player.v1","slot":N,
+## Player protocol (raid.player.v2), JSON text frames:
+##   player -> game: {"type":"register","kind":str,"scripted":str|null,
+##                    "policy":str}   on connect
+##   game -> player: {"type":"welcome","protocol":"raid.player.v2","slot":N,
 ##                    "alias":str,"turn_seconds":float}
+##                   {"type":"decision","id":N,"view":{...},
+##                    "system":str,"retry":bool,"timeout_seconds":N}
+##   player -> game: {"type":"action","id":N,"action":{...}} or
+##                   {"type":"action","id":N,"cause":str,"error":str}
 ##                   {"type":"turn","turn":N,"tick":T,"phase":P,"role":str,
 ##                    "view":{...},"order_source":"llm"|"scripted"|"fallback"}
 ##                   {"done":true,"result":{...}}
 ##
-## Decisions are made HERE, not in the player container: the Bedrock sidecar
-## credentials and the anthropic_api_key secret are injected into the GAME
-## pod, and "one parallel batch per turn" is a game-server property.
+## The game owns visibility, timing, order repair and fallback. The player
+## owns its policy and any model credentials.
 
-import std/[json, locks, os, sets, strutils, tables, times, unicode]
+import std/[json, locks, os, sets, strutils, tables, times]
 import bitworld/runtime
 import curly
 import mummy
 import mummy/routers
 import types, config, state, sim, baselines, broadcast, scoring,
-  replay, engine, llm, labels
+  replay, engine, llm, orders, labels
 
 const
   DoneBroadcastSeconds = 3.0
-  PlayerProtocol = "raid.player.v1"
+  PlayerProtocol = "raid.player.v2"
 
 type
   ServerState = object
-    prompts: seq[string]
+    kinds: seq[string]
     scripted: seq[ScriptKind]
     policies: seq[string]
     registered: seq[bool]
     everRegistered: seq[bool]
     playerSockets: Table[int, WebSocket]
     socketSlots: Table[WebSocket, int]
+    requestIds: seq[int]
+    replies: seq[JsonNode]
+    unavailable: seq[bool]
     globalSockets: HashSet[WebSocket]
     snapshot: string
     seats: int
@@ -111,9 +117,8 @@ proc writeArtifact(uri, data, contentType, methodEnv: string) =
     writeCogameUri(uri, data, contentType, methodEnv)
 
 proc pushTurnFrames() =
-  ## Informational: the seat is not required to answer, decisions are
-  ## server-side. A dead seat gets one frame with `you.alive == false` and
-  ## nothing further until `done`.
+  ## Post-order informational frame. A dead seat gets one frame with
+  ## `you.alive == false` and nothing further until `done`.
   for slot, socket in shared.playerSockets:
     if slot < 0 or slot >= gameSim.cogs.len:
       continue
@@ -226,8 +231,8 @@ proc runGame(runtimeConfig: RuntimeConfig) {.gcsafe.} =
           ## A seat that never connects does not end the episode: its cog is
           ## driven by the stalwart baseline for the whole encounter.
           shared.scripted[slot] = skStalwart
-        gameSim.policyKinds[slot] =
-          if shared.scripted[slot] != skNone: "scripted" else: "llm"
+          shared.kinds[slot] = "scripted"
+        gameSim.policyKinds[slot] = shared.kinds[slot]
       echo "raid: starting with ", shared.playerSockets.len, "/",
         shared.seats, " players connected"
       refreshSnapshotLocked()
@@ -236,7 +241,6 @@ proc runGame(runtimeConfig: RuntimeConfig) {.gcsafe.} =
         "player slot " & $noShow & " never registered; the seat played the " &
         "stalwart baseline")
 
-    let client = newLlmClient(config)
     var kinds: seq[ScriptKind]
     withLock stateLock:
       kinds = shared.scripted
@@ -244,13 +248,103 @@ proc runGame(runtimeConfig: RuntimeConfig) {.gcsafe.} =
     proc now(): float {.closure.} = epochTime() - gameStart
 
     proc decide(view: Sim, seats: seq[int]): seq[Decision] {.closure.} =
-      var prompts: seq[string]
-      var scripted: seq[ScriptKind]
-      withLock stateLock:
-        prompts = shared.prompts
-        scripted = shared.scripted
       let started = epochTime()
-      result = client.decideAll(view, seats, prompts, scripted)
+      result = newSeq[Decision](seats.len)
+      var pending: seq[int]
+      for index, seat in seats:
+        if kinds[seat] != skNone:
+          result[index] = Decision(order: scriptedOrder(view, seat, kinds[seat]),
+            source: osScripted)
+        else:
+          pending.add(index)
+      for attempt in 0 .. 1:
+        if pending.len == 0:
+          break
+        var sent: seq[int]
+        let timeout = if attempt == 0:
+          deadlineSeconds(config.llmAttemptSeconds)
+        else:
+          deadlineSeconds(config.llmRetrySeconds)
+        withLock stateLock:
+          for index in pending:
+            let seat = seats[index]
+            if shared.unavailable[seat] or not shared.registered[seat] or
+                not shared.playerSockets.hasKey(seat):
+              result[index] = Decision(
+                order: scriptedOrder(view, seat, skStalwart),
+                source: osFallback, attempts: attempt + 1,
+                cause: (if shared.unavailable[seat]: fcNoCreds else: fcTransport),
+                detail: (if shared.unavailable[seat]: "no credentials"
+                         else: "player disconnected"))
+              continue
+            let id = view.turn * 2 + attempt + 1
+            shared.requestIds[seat] = id
+            shared.replies[seat] = nil
+            try:
+              shared.playerSockets[seat].send($ %*{
+                "type": "decision", "id": id, "slot": seat,
+                "view": seatView(view, seat),
+                "system": SystemPrompt, "retry": attempt > 0,
+                "timeout_seconds": timeout
+              })
+              sent.add(index)
+            except CatchableError:
+              result[index] = Decision(
+                order: scriptedOrder(view, seat, skStalwart),
+                source: osFallback, attempts: attempt + 1,
+                cause: fcTransport, detail: "player socket send failed")
+        let deadline = epochTime() + timeout.float
+        while sent.len > 0 and epochTime() < deadline:
+          var waiting = false
+          withLock stateLock:
+            for index in sent:
+              if shared.replies[seats[index]] == nil:
+                waiting = true
+          if not waiting:
+            break
+          sleep(10)
+        var retry: seq[int]
+        for index in sent:
+          let seat = seats[index]
+          var reply: JsonNode
+          withLock stateLock:
+            reply = shared.replies[seat]
+            shared.requestIds[seat] = 0
+          if reply == nil:
+            result[index] = Decision(
+              order: scriptedOrder(view, seat, skStalwart),
+              source: osFallback, attempts: attempt + 1,
+              cause: fcTimeout, detail: "player decision timed out")
+            retry.add(index)
+          elif reply.hasKey("cause"):
+            let cause = reply["cause"].getStr()
+            let fallbackCause = case cause
+              of "no_credentials": fcNoCreds
+              of "parse_error": fcParse
+              else: fcTransport
+            result[index] = Decision(
+              order: scriptedOrder(view, seat, skStalwart),
+              source: osFallback, attempts: attempt + 1,
+              cause: fallbackCause,
+              detail: runeCap(reply{"error"}.getStr(), MaxDetailRunes))
+            if fallbackCause == fcNoCreds:
+              withLock stateLock:
+                shared.unavailable[seat] = true
+            else:
+              retry.add(index)
+          else:
+            try:
+              let raw = parseOrder(reply["action"], view.cogs[seat].role)
+              result[index] = Decision(order: repairOrder(view, seat, raw),
+                source: osLlm, attempts: attempt + 1)
+            except CatchableError as error:
+              result[index] = Decision(
+                order: scriptedOrder(view, seat, skStalwart),
+                source: osFallback, attempts: attempt + 1,
+                cause: fcParse,
+                detail: runeCap(error.msg, MaxDetailRunes))
+              retry.add(index)
+        pending = retry
       let latency = int((epochTime() - started) * 1000.0)
       for i in 0 ..< result.len:
         if result[i].source != osScripted:
@@ -386,30 +480,34 @@ proc websocketHandler(websocket: WebSocket, event: WebSocketEvent,
         return
       try:
         let payload = parseJson(message.data)
+        if payload{"type"}.getStr() == "action":
+          withLock stateLock:
+            if shared.requestIds[slot] != 0 and
+                payload{"id"}.getInt() == shared.requestIds[slot]:
+              shared.replies[slot] = payload
+          return
         if payload{"type"}.getStr() != "register":
           return
-        var prompt = payload{"prompt"}.getStr()
-        if prompt.runeLen > MaxPromptRunes:
-          prompt = prompt.runeSubStr(0, MaxPromptRunes)
+        let kind = payload["kind"].getStr()
+        if kind notin ["scripted", "prompt", "jev"]:
+          raise newException(RaidError, "unknown policy kind")
         let node = payload{"scripted"}
-        var scripted =
+        let scripted =
           if node == nil or node.kind == JNull: skNone
           elif node.kind == JBool:
             (if node.getBool(): skStalwart else: skNone)
           else: parseScriptKind(node.getStr())
-        if prompt.strip().len == 0 and scripted == skNone:
-          ## Registered with neither field: play the default baseline.
-          scripted = skStalwart
+        if kind == "scripted" and scripted == skNone or
+            kind != "scripted" and scripted != skNone:
+          raise newException(RaidError, "policy kind and baseline disagree")
         let policy = runeCap(payload{"policy"}.getStr(), MaxPolicyLabelRunes)
         withLock stateLock:
-          shared.prompts[slot] = prompt
+          shared.kinds[slot] = kind
           shared.scripted[slot] = scripted
           shared.policies[slot] = policy
           shared.registered[slot] = true
           shared.everRegistered[slot] = true
-        echo "raid: slot ", slot, " registered (", prompt.len, " prompt chars",
-          (if scripted != skNone: ", scripted " & $scripted else: ", llm"),
-          ")"
+        echo "raid: slot ", slot, " registered as ", kind
       except CatchableError as error:
         echo "raid: ignoring bad player frame: ", error.msg
     of ErrorEvent:
@@ -423,7 +521,7 @@ proc websocketHandler(websocket: WebSocket, event: WebSocketEvent,
             shared.playerSockets.del(slot)
           ## A seat that drops keeps playing: its order source degrades to
           ## the stalwart baseline and revives on reconnect.
-          if shared.everRegistered[slot] and shared.prompts[slot].len > 0:
+          if shared.everRegistered[slot] and shared.scripted[slot] == skNone:
             shared.registered[slot] = false
         shared.globalSockets.excl(websocket)
 
@@ -468,11 +566,14 @@ proc runGameServer*(config: GameConfig, runtimeConfig: RuntimeConfig) =
   echo "raid: arena baked in ",
     int((epochTime() - bakeStart) * 1000.0), " ms"
   shared.seats = config.numAgents
-  shared.prompts = newSeq[string](shared.seats)
+  shared.kinds = newSeq[string](shared.seats)
   shared.scripted = newSeq[ScriptKind](shared.seats)
   shared.policies = newSeq[string](shared.seats)
   shared.registered = newSeq[bool](shared.seats)
   shared.everRegistered = newSeq[bool](shared.seats)
+  shared.requestIds = newSeq[int](shared.seats)
+  shared.replies = newSeq[JsonNode](shared.seats)
+  shared.unavailable = newSeq[bool](shared.seats)
   shared.snapshot = $globalSnapshot(gameSim, newSeq[bool](shared.seats))
 
   let router = buildRouter(replayMode = false)

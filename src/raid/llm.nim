@@ -1,27 +1,15 @@
-## Claude-backed decision making, one parallel batch per turn.
+## Prompt inference in an ordinary Raid player.
 ##
-## Raid is a simultaneous-decision game: at each decision turn every LIVING
-## seat's request goes out together in ONE `curly.makeRequests` batch, exactly
-## bullwhip's `decideAll` (`src/bullwhip/llm.nim:419-472`). Seats are never
-## queried sequentially - that is what blows the play budget.
-##
-## Credentials, in order of preference:
-##   Bedrock sidecar / bearer token   - hosted pods
-##   ANTHROPIC_API_KEY                - the key itself
-##   ANTHROPIC_API_KEY_URI            - a URI holding the key
-## With none of them the client disables itself on the first discovery, every
-## turn falls back instantly with no network wait, and offline certification
-## still completes. That fallback is load-bearing.
+## Hosted policy containers receive a Messages API sidecar. Local policy runs
+## may use ANTHROPIC_API_KEY directly. The game never receives either secret.
 
 import std/[json, os, strutils, unicode]
-import bitworld/runtime
 import curly
-import types, config, state, sim, orders, baselines, broadcast, labels
+import types, labels
 
 const
   AnthropicUrl = "https://api.anthropic.com/v1/messages"
   AnthropicVersion = "2023-06-01"
-  BedrockAnthropicVersion = "bedrock-2023-05-31"
 
   SystemPrompt* = """
 You are one of five cogs fighting SMELTER-9, a scripted foundry boss, in a round pit
@@ -67,7 +55,7 @@ a pour circle; spread = get 140 px from everyone. The tank normally holds cleave
 everyone else dodges them.
 """
 
-  RetryHint = "\nYour previous reply was invalid, reply with a single JSON " &
+  RetryHint* = "\nYour previous reply was invalid, reply with a single JSON " &
     "object beginning with '{' carrying at least an \"intent\" legal for " &
     "your role."
 
@@ -76,76 +64,31 @@ type
     ltNone, ltBedrock, ltAnthropic
 
   LlmClient* = ref object
-    curl: Curly
+    curl*: Curly
     transport: LlmTransport
     apiKey: string
     bedrockEndpoint: string
-    bedrockModels: seq[string]
-    bedrockModel: int
-    bedrockToken: string
     model*: string
     maxOutputTokens*: int
-    attemptSeconds*: int
-    retrySeconds*: int
     disabled*: bool
 
+  LlmError* = object of RaidError
+
 proc resolveApiKey(): string =
-  result = getEnv("ANTHROPIC_API_KEY").strip()
-  if result.len > 0:
-    return
-  let uri = getEnv("ANTHROPIC_API_KEY_URI").strip()
-  if uri.len == 0:
-    return ""
-  try:
-    result = readCogameUri(uri, "ANTHROPIC_API_KEY_URI").strip()
-  except CatchableError as error:
-    echo "raid llm: failed to fetch ANTHROPIC_API_KEY_URI: ", error.msg
-    result = ""
+  getEnv("ANTHROPIC_API_KEY").strip()
 
-proc bedrockModelIds(): seq[string] =
-  let pinned = getEnv("BEDROCK_MODEL").strip()
-  if pinned.len > 0:
-    return @[pinned]
-  @[
-    "us.anthropic.claude-haiku-4-5-20251001-v1:0",
-    "us.anthropic.claude-sonnet-4-6",
-    "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
-  ]
-
-proc tryNextBedrockModel(client: LlmClient, why: string): bool =
-  if client.transport != ltBedrock or
-      client.bedrockModel + 1 >= client.bedrockModels.len:
-    return false
-  client.bedrockModel.inc
-  echo "raid llm: ", client.bedrockModels[client.bedrockModel - 1],
-    " unusable (", why, "); falling back to ",
-    client.bedrockModels[client.bedrockModel]
-  true
-
-proc bedrockUrl(client: LlmClient): string =
-  client.bedrockEndpoint & "/model/" &
-    client.bedrockModels[client.bedrockModel] & "/invoke"
-
-proc newLlmClient*(config: GameConfig): LlmClient =
+proc newLlmClient*(): LlmClient =
   result = LlmClient(
-    model: config.model,
-    maxOutputTokens: config.maxOutputTokens,
-    attemptSeconds: deadlineSeconds(config.llmAttemptSeconds),
-    retrySeconds: deadlineSeconds(config.llmRetrySeconds)
+    model: "claude-haiku-4-5-20251001",
+    maxOutputTokens: 900
   )
   let bedrockEndpoint = getEnv("AWS_ENDPOINT_URL_BEDROCK_RUNTIME").strip()
-  let bedrockToken = getEnv("AWS_BEARER_TOKEN_BEDROCK").strip()
-  if bedrockEndpoint.len > 0 or bedrockToken.len > 0:
-    let region = getEnv("AWS_REGION", getEnv("AWS_DEFAULT_REGION", "us-west-2"))
-    let endpoint =
-      if bedrockEndpoint.len > 0: bedrockEndpoint
-      else: "https://bedrock-runtime." & region & ".amazonaws.com"
+  if bedrockEndpoint.len > 0:
     result.transport = ltBedrock
-    result.bedrockEndpoint = endpoint.strip(chars = {'/'}, leading = false)
-    result.bedrockModels = bedrockModelIds()
-    result.bedrockToken = bedrockToken
+    result.bedrockEndpoint = bedrockEndpoint.strip(chars = {'/'}, leading = false)
+    result.model = getEnv("BEDROCK_MODEL")
     result.curl = newCurly()
-    echo "raid llm: bedrock transport, url ", result.bedrockUrl
+    echo "raid llm: sidecar transport, model ", result.model
     return
   result.apiKey = resolveApiKey()
   if result.apiKey.len > 0:
@@ -157,15 +100,14 @@ proc newLlmClient*(config: GameConfig): LlmClient =
     result.disabled = true
     echo "raid llm: no LLM credentials; using scripted fallback"
 
-proc userPrompt*(sim: Sim, slot: int, prompt: string): string =
-  ## The seat's operator prompt, a blank line, then the seat's view JSON. The
-  ## prompt text itself is never echoed into the replay or the results.
-  result = prompt.strip()
+proc userPrompt*(view: JsonNode, prompt: string): string =
+  ## The operator prompt never crosses the game socket or enters the replay.
+  result = runeCap(prompt.strip(), MaxPromptRunes)
   if result.len > 0:
     result.add("\n\n")
-  result.add($seatView(sim, slot))
+  result.add($view)
 
-proc requestFor(client: LlmClient, system, user: string):
+proc requestFor*(client: LlmClient, system, user: string):
     tuple[url: string, headers: HttpHeaders, body: string] =
   var body = %*{
     "max_tokens": client.maxOutputTokens,
@@ -175,13 +117,10 @@ proc requestFor(client: LlmClient, system, user: string):
   }
   var headers: HttpHeaders
   headers["content-type"] = "application/json"
+  body["model"] = %client.model
   if client.transport == ltBedrock:
-    body["anthropic_version"] = %BedrockAnthropicVersion
-    if client.bedrockToken.len > 0:
-      headers["authorization"] = "Bearer " & client.bedrockToken
-    result.url = client.bedrockUrl()
+    result.url = client.bedrockEndpoint & "/v1/messages"
   else:
-    body["model"] = %client.model
     ## Only the Claude 5 / Opus tiers accept an effort setting; Haiku 4.5
     ## rejects the whole request with a 400 if it is present.
     if "haiku" notin client.model and "4-5" notin client.model:
@@ -199,113 +138,24 @@ proc textOf*(client: LlmClient, response: Response, error, url: string):
   ## every captured fragment of a body is cut with `runeCap` - on RUNE
   ## boundaries, never bytes (`labels.nim:31`).
   if error.len > 0:
-    raise newException(RaidError, "llm transport: " & error)
+    raise newException(LlmError, "llm transport: " & error)
   if response.code == 401 or response.code == 403:
     let detail = runeCap(response.body, 400)
-    if "Model access is denied" in response.body and
-        client.tryNextBedrockModel("no model access"):
-      raise newException(RaidError, "bedrock model access denied: " & detail)
     client.disabled = true
-    raise newException(RaidError,
+    raise newException(LlmError,
       "llm auth failed (" & $response.code & ") at " & url & ": " & detail)
   if response.code == 429:
     let detail = runeCap(response.body, 300)
-    discard client.tryNextBedrockModel("throttled")
-    raise newException(RaidError, "llm throttled (429): " & detail)
+    raise newException(LlmError, "llm throttled (429): " & detail)
   if response.code < 200 or response.code >= 300:
-    raise newException(RaidError, "anthropic error " & $response.code & ": " &
+    raise newException(LlmError, "anthropic error " & $response.code & ": " &
       runeCap(response.body, 300))
   let payload = parseJson(response.body)
   if payload{"stop_reason"}.getStr() == "refusal":
-    raise newException(RaidError, "anthropic refusal")
+    raise newException(LlmError, "anthropic refusal")
   for contentBlock in payload["content"]:
     if contentBlock{"type"}.getStr() == "text":
       result.add(contentBlock{"text"}.getStr())
   if payload{"stop_reason"}.getStr() == "max_tokens" and '{' notin result:
-    raise newException(RaidError, "reply cut off at max_tokens before any " &
+    raise newException(LlmError, "reply cut off at max_tokens before any " &
       "JSON: " & runeCap(result, 160))
-
-proc causeOf(message: string): FallbackCause =
-  let lowered = message.toLowerAscii()
-  if "transport" in lowered or "timeout" in lowered or
-      "timed out" in lowered or "connect" in lowered:
-    fcTimeout
-  elif "auth" in lowered or "credential" in lowered:
-    fcNoCreds
-  elif "error" in lowered and "json" notin lowered:
-    fcTransport
-  else:
-    fcParse
-
-proc scriptedDecision*(sim: Sim, slot: int, kind: ScriptKind): Decision =
-  Decision(
-    order: scriptedOrder(sim, slot, (if kind == skNone: skStalwart else: kind)),
-    source: osScripted, latencyMs: 0, attempts: 0, cause: fcNone
-  )
-
-proc decideAll*(
-  client: LlmClient,
-  sim: Sim,
-  seats: seq[int],
-  prompts: seq[string],
-  scripted: seq[ScriptKind]
-): seq[Decision] =
-  ## One decision per seat in `seats`, in order. Never raises: any failure
-  ## falls back to the stalwart order so the encounter always advances.
-  ## `prompts` and `scripted` are indexed by SEAT.
-  result = newSeq[Decision](seats.len)
-  var open: seq[int]
-  for index, seat in seats:
-    let kind = scripted[seat]
-    if kind != skNone:
-      result[index] = scriptedDecision(sim, seat, kind)
-    elif client == nil or client.disabled:
-      result[index] = scriptedDecision(sim, seat, skStalwart)
-      result[index].source = osFallback
-      result[index].cause = fcNoCreds
-      result[index].detail = runeCap("no LLM credentials", MaxDetailRunes)
-    else:
-      open.add(index)
-  for attempt in 0 .. 1:
-    if open.len == 0 or client.disabled:
-      break
-    var batch: RequestBatch
-    for index in open:
-      let seat = seats[index]
-      var user = userPrompt(sim, seat, prompts[seat])
-      if attempt > 0:
-        user.add(RetryHint)
-      let request = client.requestFor(SystemPrompt, user)
-      batch.post(request.url, request.headers, request.body, $index)
-    ## ONE parallel batch for every open seat. Never a loop of single calls.
-    let timeout =
-      if attempt == 0: client.attemptSeconds else: client.retrySeconds
-    let responses = client.curl.makeRequests(batch, timeout)
-    var stillOpen: seq[int]
-    for position, index in open:
-      let seat = seats[index]
-      try:
-        let text = client.textOf(responses[position].response,
-          responses[position].error, batch[position].url)
-        let raw = parseOrder(extractJsonObject(text), sim.cogs[seat].role)
-        result[index] = Decision(
-          order: repairOrder(sim, seat, raw), source: osLlm,
-          attempts: attempt + 1, cause: fcNone
-        )
-      except CatchableError as error:
-        echo "raid llm: seat ", seat, " attempt ", attempt + 1, " failed: ",
-          error.msg
-        result[index] = Decision(
-          order: scriptedOrder(sim, seat, skStalwart), source: osFallback,
-          attempts: attempt + 1, cause: causeOf(error.msg),
-          detail: runeCap(error.msg, MaxDetailRunes)
-        )
-        stillOpen.add(index)
-    open = stillOpen
-  for index in open:
-    let seat = seats[index]
-    echo "raid llm: seat ", seat, " falling back to the scripted order"
-    if result[index].source != osFallback:
-      result[index] = scriptedDecision(sim, seat, skStalwart)
-      result[index].source = osFallback
-      result[index].cause = fcTimeout
