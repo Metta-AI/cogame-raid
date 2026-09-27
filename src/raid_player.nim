@@ -1,4 +1,4 @@
-## Raid player: prompt, Jev and scripted policies use one seat socket.
+## Raid player: prompt and scripted policies use one seat socket.
 ##
 ## PLAYER_SCRIPTED=stalwart (or 1) registers the seat as the built-in stalwart
 ## baseline instead; PLAYER_SCRIPTED=greenhorn as the weaker one. The server
@@ -11,7 +11,7 @@
 import std/[json, options, os, strutils]
 import curly
 import whisky
-import raid/[llm, orders, types, jev_policy]
+import raid/[llm, orders, types]
 
 const
   ConnectAttempts = 5
@@ -37,12 +37,10 @@ when isMainModule:
     quit("COWORLD_PLAYER_WS_URL is not set", 1)
   var prompt = getEnv("PLAYER_PROMPT")
   let scripted = getEnv("PLAYER_SCRIPTED").strip()
-  let jev = getEnv("PLAYER_JEV").strip() == "true"
-  if prompt.strip().len == 0 and scripted.len == 0 and not jev:
+  if prompt.strip().len == 0 and scripted.len == 0:
     prompt = DefaultPrompt
   let policy = getEnv("PLAYER_POLICY_LABEL")
   let kind = if scripted.len > 0: "scripted"
-    elif jev: "jev"
     else: "prompt"
   let client = if kind == "prompt": newLlmClient()
     else: nil
@@ -106,25 +104,19 @@ when isMainModule:
         discard
       of "decision":
         var reply = %*{"type": "action", "id": payload["id"]}
-        if kind == "prompt" and client.disabled or
-            kind == "jev" and not jevConfigured():
+        if kind == "prompt" and client.disabled:
           reply["cause"] = %"no_credentials"
           reply["error"] = %"no credentials"
         else:
           try:
-            if kind == "jev":
-              reply["action"] = chooseJevOrder(payload["view"],
-                payload["slot"].getInt(),
-                payload["timeout_seconds"].getInt())
-            else:
-              var user = userPrompt(payload["view"], prompt)
-              if payload["retry"].getBool():
-                user.add(RetryHint)
-              let request = client.requestFor(payload["system"].getStr(), user)
-              let response = client.curl.post(request.url, request.headers,
-                request.body, payload["timeout_seconds"].getInt())
-              reply["action"] = extractJsonObject(
-                client.textOf(response, "", request.url))
+            var user = userPrompt(payload["view"], prompt)
+            if payload["retry"].getBool():
+              user.add(RetryHint)
+            let request = client.requestFor(payload["system"].getStr(), user)
+            let response = client.curl.post(request.url, request.headers,
+              request.body, payload["timeout_seconds"].getInt())
+            reply["action"] = extractJsonObject(
+              client.textOf(response, "", request.url))
           except LlmError as error:
             reply["cause"] = %"transport_error"
             reply["error"] = %error.msg

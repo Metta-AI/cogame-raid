@@ -44,7 +44,7 @@ DESCRIPTION = (
     "arrives one turn stale. Score is boss health removed divided by time "
     "spent, in units of the enrage timer (1.0 = killed it exactly on the "
     "timer), and every seat carries the identical number, so a healer who "
-    "never touches the boss can be a champion. Prompt and Jev policies "
+    "never touches the boss can be a champion. Prompt and external policies "
     "receive private seat views through the ordinary player socket and "
     "return complete orders. The game owns timing, order repair, fallback, "
     "results and replay. Stalwart and greenhorn are scripted baselines. "
@@ -228,7 +228,7 @@ RESULTS_SCHEMA = {
 
 PLAYER_PROTOCOL = (
     "raid.player.v2 - JSON text frames over COWORLD_PLAYER_WS_URL. "
-    "player->game: {\"type\":\"register\",\"kind\":\"scripted|prompt|jev\","
+    "player->game: {\"type\":\"register\",\"kind\":\"scripted|prompt|external\","
     "\"scripted\":\"stalwart|greenhorn|null\",\"policy\":str}; "
     "game->player: {\"type\":\"decision\",\"id\":int,\"slot\":int,"
     "\"view\":object,\"system\":str,\"retry\":bool,"
@@ -237,7 +237,7 @@ PLAYER_PROTOCOL = (
     "{\"type\":\"action\",\"id\":int,\"cause\":str,"
     "\"error\":str}. The game sends every living seat's private view "
     "concurrently, validates and repairs orders, and owns bounded retries, "
-    "fallback, results and replay. The player owns prompt or Jev inference. "
+    "fallback, results and replay. The player owns policy inference. "
     "The order has intent, target, station, point, on_telegraph, note and say. "
     "After each turn the game sends an informational turn frame; at the end "
     "it sends {\"done\":true,\"result\":object}. See docs/PROTOCOL.md."
@@ -291,7 +291,7 @@ def variant(vid, name, description, boss, enrage, max_ticks, wall):
     }
 
 
-def player_entry(pid, name, description, scripted, jev=False):
+def player_entry(pid, name, description, scripted):
     entry = {
         "id": pid, "name": name, "type": "player", "description": description,
         "image": "{{RAID_IMAGE}}", "run": ["/bin/raid-player"],
@@ -303,8 +303,6 @@ def player_entry(pid, name, description, scripted, jev=False):
     }
     if scripted:
         entry["env"] = {"PLAYER_SCRIPTED": scripted}
-    if jev:
-        entry["env"] = {"PLAYER_JEV": "true"}
     return entry
 
 
@@ -363,10 +361,6 @@ def build():
                 "The reference prompt policy answers private decision views "
                 "with complete orders. Field your own with PLAYER_PROMPT.",
                 None),
-            player_entry(
-                "jev", "Raid Jev Player",
-                "Jev selects complete orders from the same private seat view.",
-                None, jev=True),
         ],
         "variants": [
             variant("default", "SMELTER-9 (5 cogs, 240 s enrage)",
@@ -403,7 +397,7 @@ def build():
                 {"player_id": "baseline"},
                 {"player_id": "greenhorn"},
                 {"player_id": "raid-player"},
-                {"player_id": "jev"},
+                {"player_id": "baseline"},
             ],
         },
     }

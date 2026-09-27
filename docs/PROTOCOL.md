@@ -11,7 +11,7 @@ Two protocols and one file format:
 ## `raid.player.v2`
 
 The game sends each living seat its private view over the normal player socket.
-Prompt and Jev players return complete orders. All living seats receive their
+Prompt and external players return complete orders. All living seats receive their
 requests before the game waits, preserving simultaneous decisions. The game
 owns order validation and repair, bounded retries, scripted fallback, results,
 and replay. Model credentials and operator prompts stay in player containers.
@@ -21,11 +21,11 @@ and replay. Model credentials and operator prompts stay in player containers.
 On connect:
 
 ```json
-{"type":"register", "kind":"scripted|prompt|jev",
+{"type":"register", "kind":"scripted|prompt|external",
  "scripted":"stalwart|greenhorn|null", "policy":"<label, <=48 runes>"}
 ```
 
-A scripted policy names its baseline. Prompt and Jev policies send a null
+A scripted policy names its baseline. Prompt and external policies send a null
 baseline. A seat that never registers plays `stalwart` and is reported through
 `COGAME_PLAYER_FAILURE_URI`.
 
