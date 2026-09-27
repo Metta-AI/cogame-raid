@@ -154,10 +154,9 @@ proc testConfigSchemaCoversTheKnobs() =
 
 proc testPoliciesFile() =
   let policies = parseJson(repoFile("tools/ci/policies.json"))
-  checkEq(policies.len, 5, "five policies")
+  checkEq(policies.len, 4, "four policies")
   var prompts = 0
   var scripted = 0
-  var jev = 0
   var owned = 0
   for entry in policies:
     check(entry["name"].getStr().startsWith("raid-"), "named for this game")
@@ -170,9 +169,6 @@ proc testPoliciesFile() =
       scripted.inc
       check(entry["env"]["PLAYER_SCRIPTED"].getStr() in
         ["stalwart", "greenhorn"], "a known baseline")
-    if entry["env"].hasKey("PLAYER_JEV"):
-      jev.inc
-      checkEq(entry["env"]["PLAYER_JEV"].getStr(), "true", "Jev mode")
     if entry.hasKey("player"):
       owned.inc
       checkEq(entry["player"].getStr(),
@@ -180,9 +176,8 @@ proc testPoliciesFile() =
         "champion #2 is owned by daveey-1")
   checkEq(prompts, 2, "two LLM prompt champions")
   checkEq(scripted, 2, "two scripted baselines")
-  checkEq(jev, 1, "one Jev policy")
   checkEq(owned, 1, "exactly one policy carries an owner")
-  done("tools/ci/policies.json has two champions, two baselines and Jev")
+  done("tools/ci/policies.json has two champions, two baselines")
 
 when isMainModule:
   testSeatCountEverywhere()

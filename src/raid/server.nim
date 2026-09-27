@@ -489,7 +489,7 @@ proc websocketHandler(websocket: WebSocket, event: WebSocketEvent,
         if payload{"type"}.getStr() != "register":
           return
         let kind = payload["kind"].getStr()
-        if kind notin ["scripted", "prompt", "jev"]:
+        if kind notin ["scripted", "prompt", "external"]:
           raise newException(RaidError, "unknown policy kind")
         let node = payload{"scripted"}
         let scripted =
