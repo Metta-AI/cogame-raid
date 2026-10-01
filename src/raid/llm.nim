@@ -61,13 +61,13 @@ everyone else dodges them.
 
 type
   LlmTransport = enum
-    ltNone, ltBedrock, ltAnthropic
+    ltNone, ltSidecar, ltAnthropic
 
   LlmClient* = ref object
     curl*: Curly
     transport: LlmTransport
     apiKey: string
-    bedrockEndpoint: string
+    sidecarEndpoint: string
     model*: string
     maxOutputTokens*: int
     disabled*: bool
@@ -82,11 +82,11 @@ proc newLlmClient*(): LlmClient =
     model: "claude-haiku-4-5-20251001",
     maxOutputTokens: 900
   )
-  let bedrockEndpoint = getEnv("AWS_ENDPOINT_URL_BEDROCK_RUNTIME").strip()
-  if bedrockEndpoint.len > 0:
-    result.transport = ltBedrock
-    result.bedrockEndpoint = bedrockEndpoint.strip(chars = {'/'}, leading = false)
-    result.model = getEnv("BEDROCK_MODEL")
+  let sidecarEndpoint = getEnv("COWORLD_LLM_ENDPOINT").strip()
+  if sidecarEndpoint.len > 0:
+    result.transport = ltSidecar
+    result.sidecarEndpoint = sidecarEndpoint.strip(chars = {'/'}, leading = false)
+    result.model = getEnv("COWORLD_LLM_MODEL", "anthropic/claude-haiku-4.5")
     result.curl = newCurly()
     echo "raid llm: sidecar transport, model ", result.model
     return
@@ -107,7 +107,7 @@ proc userPrompt*(view: JsonNode, prompt: string): string =
     result.add("\n\n")
   result.add($view)
 
-proc requestFor*(client: LlmClient, system, user: string):
+proc requestFor*(client: LlmClient, system, user: string, slot: int):
     tuple[url: string, headers: HttpHeaders, body: string] =
   var body = %*{
     "max_tokens": client.maxOutputTokens,
@@ -116,10 +116,12 @@ proc requestFor*(client: LlmClient, system, user: string):
     "messages": [{"role": "user", "content": user}]
   }
   var headers: HttpHeaders
+  if client.transport == ltSidecar and slot >= 0:
+    headers["X-Coworld-Player-Slot"] = $slot
   headers["content-type"] = "application/json"
   body["model"] = %client.model
-  if client.transport == ltBedrock:
-    result.url = client.bedrockEndpoint & "/v1/messages"
+  if client.transport == ltSidecar:
+    result.url = client.sidecarEndpoint & "/v1/messages"
   else:
     ## Only the Claude 5 / Opus tiers accept an effort setting; Haiku 4.5
     ## rejects the whole request with a 400 if it is present.
