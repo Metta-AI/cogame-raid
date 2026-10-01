@@ -112,7 +112,7 @@ when isMainModule:
             var user = userPrompt(payload["view"], prompt)
             if payload["retry"].getBool():
               user.add(RetryHint)
-            let request = client.requestFor(payload["system"].getStr(), user)
+            let request = client.requestFor(payload["system"].getStr(), user, -1)
             let response = client.curl.post(request.url, request.headers,
               request.body, payload["timeout_seconds"].getInt())
             reply["action"] = extractJsonObject(
