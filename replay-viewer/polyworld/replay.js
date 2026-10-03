@@ -52,6 +52,9 @@
       get index(){return index;}, get playing(){return playing;}, get tickCount(){return ticks;}};
     window.addEventListener('resize', resize); resize(); play.disabled = false;
     document.documentElement.dataset.replayLoaded = 'true'; requestAnimationFrame(animate);
-    window.addEventListener('pagehide', () => {pause(); module._raid_pw_close();}, {once:true});
+    window.addEventListener('pagehide', event => {
+      pause();
+      if (!event.persisted) module._raid_pw_close();
+    });
   } catch (error) {fail(error.message || error);}
 })();
