@@ -6,7 +6,7 @@
 ## queried sequentially - that is what blows the play budget.
 ##
 ## Credentials, in order of preference:
-##   Bedrock sidecar / bearer token   - hosted pods
+##   COWORLD_LLM_ENDPOINT (hosted), then local Bedrock / bearer token   - hosted pods
 ##   ANTHROPIC_API_KEY                - the key itself
 ##   ANTHROPIC_API_KEY_URI            - a URI holding the key
 ## With none of them the client disables itself on the first discovery, every
@@ -73,11 +73,12 @@ everyone else dodges them.
 
 type
   LlmTransport = enum
-    ltNone, ltBedrock, ltAnthropic
+    ltNone, ltSidecar, ltBedrock, ltAnthropic
 
   LlmClient* = ref object
     curl: Curly
     transport: LlmTransport
+    sidecarEndpoint: string
     apiKey: string
     bedrockEndpoint: string
     bedrockModels: seq[string]
@@ -133,6 +134,13 @@ proc newLlmClient*(config: GameConfig): LlmClient =
     attemptSeconds: deadlineSeconds(config.llmAttemptSeconds),
     retrySeconds: deadlineSeconds(config.llmRetrySeconds)
   )
+  let sidecarEndpoint = getEnv("COWORLD_LLM_ENDPOINT").strip()
+  if sidecarEndpoint.len > 0:
+    result.transport = ltSidecar
+    result.sidecarEndpoint = sidecarEndpoint.strip(chars = {'/'}, leading = false)
+    result.model = getEnv("COWORLD_LLM_MODEL", "anthropic/claude-haiku-4.5")
+    result.curl = newCurly()
+    return
   let bedrockEndpoint = getEnv("AWS_ENDPOINT_URL_BEDROCK_RUNTIME").strip()
   let bedrockToken = getEnv("AWS_BEARER_TOKEN_BEDROCK").strip()
   if bedrockEndpoint.len > 0 or bedrockToken.len > 0:
@@ -165,7 +173,7 @@ proc userPrompt*(sim: Sim, slot: int, prompt: string): string =
     result.add("\n\n")
   result.add($seatView(sim, slot))
 
-proc requestFor(client: LlmClient, system, user: string):
+proc requestFor(client: LlmClient, system, user: string, slot: int):
     tuple[url: string, headers: HttpHeaders, body: string] =
   var body = %*{
     "max_tokens": client.maxOutputTokens,
@@ -180,6 +188,11 @@ proc requestFor(client: LlmClient, system, user: string):
     if client.bedrockToken.len > 0:
       headers["authorization"] = "Bearer " & client.bedrockToken
     result.url = client.bedrockUrl()
+  elif client.transport == ltSidecar:
+    body["model"] = %client.model
+    headers["X-Coworld-Player-Slot"] = $slot
+    headers["anthropic-version"] = AnthropicVersion
+    result.url = client.sidecarEndpoint & "/v1/messages"
   else:
     body["model"] = %client.model
     ## Only the Claude 5 / Opus tiers accept an effort setting; Haiku 4.5
@@ -275,7 +288,7 @@ proc decideAll*(
       var user = userPrompt(sim, seat, prompts[seat])
       if attempt > 0:
         user.add(RetryHint)
-      let request = client.requestFor(SystemPrompt, user)
+      let request = client.requestFor(SystemPrompt, user, seat)
       batch.post(request.url, request.headers, request.body, $index)
     ## ONE parallel batch for every open seat. Never a loop of single calls.
     let timeout =

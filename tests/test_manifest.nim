@@ -129,7 +129,7 @@ proc testImageNamesAgreeWithCompose() =
   check("coworld-raid:latest" in compose,
     "compose.yaml names coworld-raid:latest")
   check("platform: linux/amd64" in compose, "on linux/amd64")
-  check("network: host" in compose, "building with network: host")
+  check("network: host" notin compose, "building without host network entitlement")
   let smoke = repoFile("tools/ci/docker_smoke.sh")
   check("coworld-raid:ci" in smoke,
     "and the smoke defaults to the same image name")
