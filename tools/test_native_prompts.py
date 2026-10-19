@@ -124,7 +124,7 @@ def main() -> None:
         else:
             raise RuntimeError("host did not start")
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz") as health:
-            assert health.status == 50
+            assert health.status == 200
             (work / "health.txt").write_bytes(health.read())
         for seat in range(5):
             player_env = dict(
