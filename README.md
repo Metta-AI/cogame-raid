@@ -97,6 +97,13 @@ PLAYER_SCRIPTED=greenhorn  /bin/raid-player
 
 ## Watching
 
+Game configuration accepts `promptVariant` and `promptSeed`. The default
+`canonical` retains the original wording; `mixed` requires a nonnegative seed
+and chooses one of five introductions for the whole encounter. Rules, role
+deals, observations, operator instructions, and action parsing remain fixed.
+See [training and evaluation](TRAINING.md) for explicit wordings and held-out
+evaluation controls.
+
 The replay is a **static wasm bundle**, never a pod: the browser re-derives
 every frame from `seed` + `map` + `config` + the recorded orders with the same
 Nim sim the server runs, and checks itself against the per-second state digests

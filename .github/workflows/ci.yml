@@ -153,6 +153,9 @@ jobs:
         run: |
           nim c -d:release --hints:off --path:src -o:/tmp/raid-train-bridge tools/train_bridge.nim
           python3 tools/test_train_bridge.py /tmp/raid-train-bridge
+          python3 tools/test_prompt_games.py /tmp/raid-train-bridge
+          nim c -d:release --parallelBuild:1 --hints:off --path:src -o:/tmp/raid-export tools/export_posttrain.nim
+          python3 tools/test_source_prompts.py /tmp/raid-export /tmp/raid-source-panel
 
   # ---------------------------------------------------------------------
   # Packaging smoke: the production image builds, and one real episode runs

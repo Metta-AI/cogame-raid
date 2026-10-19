@@ -5,14 +5,14 @@
 
 import std/[json, os, strutils, unicode]
 import curly
-import types, labels
+import types, labels, prompts
 
 const
   AnthropicUrl = "https://api.anthropic.com/v1/messages"
   AnthropicVersion = "2023-06-01"
 
-  SystemPrompt* = """
-You are one of five cogs fighting SMELTER-9, a scripted foundry boss, in a round pit
+  CanonicalIntroduction = "You are one of five cogs fighting SMELTER-9, a scripted foundry boss, in a round pit\n"
+  CommonRules = """
 300 pixels in radius centred at (617,329) on a 1235x659 floor, x right, y down. Four
 40x40 pillars at (511,223) (723,223) (511,435) (723,435) block movement, sight, heals
 and ranged attacks - but not floor effects.
@@ -54,10 +54,23 @@ on_telegraph: dodge = leave the shape; hold = stay and keep attacking; soak = st
 a pour circle; spread = get 140 px from everyone. The tank normally holds cleaves and
 everyone else dodges them.
 """
+  SystemPrompt* = CanonicalIntroduction & CommonRules
 
   RetryHint* = "\nYour previous reply was invalid, reply with a single JSON " &
     "object beginning with '{' carrying at least an \"intent\" legal for " &
     "your role."
+
+proc systemPrompt*(selection: PromptSelection): string =
+  let introduction = case selection.selectedVariant
+    of pvCanonical: CanonicalIntroduction
+    of pvPlain: "Five cogs, including you, fight the scripted foundry boss SMELTER-9 in a round pit\n"
+    of pvNumbered: "1. You are one of five cogs.\n2. Fight SMELTER-9, a scripted foundry boss, in a round pit\n"
+    of pvQuestions: "Who are you? One of five cogs. Who do you fight? SMELTER-9, a scripted foundry boss, in a round pit\n"
+    of pvReordered: "In a round pit, you and four other cogs fight SMELTER-9, a scripted foundry boss. The pit is\n"
+    of pvHeldoutBriefing: "Your team of five cogs faces SMELTER-9, a scripted foundry boss, in a round pit\n"
+    of pvHeldoutReference: "Team: five cogs, including you. Opponent: scripted foundry boss SMELTER-9. Arena: a round pit\n"
+    of pvMixed: raise newException(ValueError, "mixed wording must resolve before rendering")
+  introduction & CommonRules
 
 type
   LlmTransport = enum

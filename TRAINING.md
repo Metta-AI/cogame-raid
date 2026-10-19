@@ -1,13 +1,13 @@
 # Metta post-training data
 
-The native simulator and published `stalwart` policy export supervised
-examples for both certified Raid variants:
+The native simulator and published `stalwart` policy export private candidate
+trajectories for both certified Raid variants. Export requires a clean commit.
 
 ```sh
 nimby sync nimby.lock
 for variant in default sprint; do
   nim r -d:release --path:src tools/export_posttrain.nim \
-    "/tmp/raid-${variant}" 10 1 "$variant"
+    "/tmp/raid-${variant}" 10 1 "$variant" mixed 3
 done
 ```
 
@@ -16,20 +16,17 @@ per-seat tokens supplied by the hosted platform, and plays complete seeded
 encounters. At each simultaneous turn, it records every living seat's hosted
 system and user prompts and a scripted order accepted by the game's reply
 parser. Parsed orders drive the native encounter engine. Whole encounters
-stay in one split. The output manifest records source revision, variant,
-scores, ending rule, and row counts. Existing output directories are never
-overwritten.
+share the `raid-SEED` family across game variants and wording selections.
+The output manifest records source revision, wording, variant, scores, ending
+rule, and row counts. Existing output directories are never overwritten.
 
-Train an output with Metta post-training:
+`trajectories.jsonl` contains completed episode events and private decision
+events. Each decision records the teacher response, parsed order, installed
+order, selected attempt, exact messages, and prompt hashes. The shared Coworld
+SDK and application importer own review and dataset splits. These candidates
+are not ready-to-train datasets; unreviewed examples must not be admitted.
 
-```sh
-nix develop -c uv run --package metta-posttrain --extra train \
-  python -m metta_posttrain.train --dataset /tmp/raid-default \
-  --output /tmp/raid-adapter --model Qwen/Qwen3-0.6B \
-  --max-steps 100 --max-length 4096
-```
-
-Ten complete encounters yielded 520 training and 247 validation examples
+Historical canonical exports yielded 520 training and 247 validation examples
 for Default, and 442 and 175 for Sprint. All 1,384 examples fit the
 Qwen2.5-0.5B-Instruct tokenizer in 4,096 tokens; the maximum was 1,913.
 These examples distill the scripted teacher; they do not establish stronger
@@ -65,3 +62,27 @@ From Metta, use `recipes.external.coworld_metta_rl.train` or
 `["/tmp/raid-train-bridge", "<source>/coworld_manifest_template.json", "default"]`
 and `players=5`. Replace `default` with `sprint` for the second variant.
 Set a finite timestep limit for either trainer.
+
+## Prompt diversity
+
+Reset accepts `promptVariant` and `promptSeed`. `canonical` preserves the
+original prompt. `plain`, `numbered`, `questions`, and `reordered` paraphrase
+only the introduction. `mixed` chooses one of those five using an explicit
+nonnegative prompt seed, independently of the simulation seed. Selection
+stays fixed throughout an encounter and its retries.
+
+`heldout-briefing` and `heldout-reference` are evaluation-only wordings.
+Bridge resets using them require `split: "validation"` or `split: "test"`;
+source export rejects them.
+The bridge's optional third argument, `text`, uses the native order parser.
+Without that argument it retains the numeric action interface.
+
+```sh
+python3 tools/test_prompt_games.py /tmp/raid-train-bridge
+```
+
+This system panel compares complete games under each wording in both variants
+and interfaces. It verifies unchanged observations, actions, and outcomes.
+It does not measure learned policy robustness. A model comparison must hold
+simulation seeds, budgets, and policies fixed and report errors and fallbacks
+alongside scores, including the two held-out wordings.

@@ -3,7 +3,7 @@
 
 import std/[json, os, strutils]
 import raid/[arena, baselines, config, engine, llm, orders, scoring, sim, state, types,
-             broadcast]
+             broadcast, prompts]
 
 const
   OperatorPrompt = "Choose legal orders that maximize the team's score over the complete encounter."
@@ -191,25 +191,38 @@ proc hostedOrder(candidate, view: JsonNode): JsonNode =
   if candidate["has_point"].getBool():
     result["point"] = %*[candidate["point_x"], candidate["point_y"]]
 
-proc decision(view: JsonNode, seat, id: int): JsonNode =
+proc decision(view: JsonNode, seat, id: int, selection: PromptSelection,
+    textMode: bool): JsonNode =
   var properties = newJObject()
   var required = newJArray()
   for head in heads():
     let name = head["name"].getStr()
     properties[name] = %*{"enum": head["choices"]}
     required.add(%name)
+  let system = systemPrompt(selection)
+  let user = userPrompt(view, OperatorPrompt)
+  let semantic = copy(view)
+  semantic["prompt_template"] = promptMetadata(selection, system, user)
+  let schema = if textMode:
+      %*{"type": "object", "required": ["intent"],
+        "properties": {"intent": {"type": "string"},
+          "target": {"type": ["string", "null"]}, "station": {"type": "string"},
+          "point": {"type": "array", "items": {"type": "integer"}, "minItems": 2, "maxItems": 2},
+          "on_telegraph": {"type": "string"}, "note": {"type": "string"}, "say": {"type": "string"}}}
+    else: %*{"type": "object", "properties": properties, "required": required}
   %*{"kind": "decision", "game": "raid", "decision_id": id,
     "seat": seat, "engine_seat": seat, "turn": view["turn"],
-    "semantic_view": view, "inbox": [],
-    "messages": [{"role": "system", "content": SystemPrompt},
-      {"role": "user", "content": OperatorPrompt & "\n\n" & $view}],
+    "semantic_view": semantic, "inbox": [],
+    "messages": [{"role": "system", "content": system},
+      {"role": "user", "content": user}],
     "speech_messages": [],
-    "action_schema": {"type": "object", "properties": properties,
-      "required": required}, "typed_question": newJNull()}
+    "action_schema": schema, "typed_question": newJNull()}
 
 when isMainModule:
   let args = commandLineParams()
-  if args.len != 2: quit("usage: raid-train-bridge MANIFEST VARIANT", 1)
+  if args.len notin 2 .. 3: quit("usage: raid-train-bridge MANIFEST VARIANT [text]", 1)
+  let textMode = args.len == 3
+  if textMode and args[2] != "text": quit("third argument must be text", 1)
   let variant = args[1]
   doAssert variant in Variants
   let manifest = parseFile(args[0])
@@ -225,12 +238,19 @@ when isMainModule:
   var decisions: seq[Decision]
   var index = 0
   var id = 0
+  var selection: PromptSelection
   while not stdin.endOfFile:
     let request = parseJson(stdin.readLine())
     var response: JsonNode
     case request["kind"].getStr()
     of "reset":
       doAssert request["players"].getInt() == Seats
+      selection = promptSelection(request)
+      let split = request{"split"}.getStr("train")
+      if split notin ["train", "validation", "test"]:
+        raise newException(ValueError, "unknown split")
+      if split == "train" and selection.selectedVariant in {pvHeldoutBriefing, pvHeldoutReference}:
+        raise newException(ValueError, "held-out wording cannot enter training")
       var gameConfig = defaultGameConfig()
       let runtime = copy(variantConfig)
       runtime["tokens"] = %*["t0", "t1", "t2", "t3", "t4"]
@@ -243,7 +263,7 @@ when isMainModule:
       decisions = @[]
       index = 0
       id = 0
-      response = views[active[index]].decision(active[index], id)
+      response = views[active[index]].decision(active[index], id, selection, textMode)
     of "encode":
       doAssert not game.done
       let seat = active[index]
@@ -251,22 +271,26 @@ when isMainModule:
         "values": views[seat].values(variant, seat), "action_heads": heads()}
     of "teacher":
       doAssert not game.done
-      response = %*{"response": $action(
-        scriptedOrder(game, active[index], skStalwart),
-        views[active[index]])}
+      let order = scriptedOrder(game, active[index], skStalwart)
+      var candidate = if textMode: orderToJson(order)
+        else: action(order, views[active[index]])
+      if textMode and not order.hasPoint: candidate.delete("point")
+      response = %*{"response": $candidate}
     of "step":
       doAssert not game.done and request["decision_id"].getInt() == id
       let candidate = parseJson(request["response"].getStr())
-      for head in heads():
-        doAssert candidate[head["name"].getStr()] in head["choices"]
+      if not textMode:
+        for head in heads():
+          doAssert candidate[head["name"].getStr()] in head["choices"]
       let seat = active[index]
-      decisions.add(Decision(order: parseOrder(candidate.hostedOrder(views[seat]),
+      let native = if textMode: candidate else: candidate.hostedOrder(views[seat])
+      decisions.add(Decision(order: parseOrder(native,
         game.cogs[seat].role), source: osLlm))
       inc index
       inc id
       var observation: JsonNode
       if index < active.len:
-        observation = views[active[index]].decision(active[index], id)
+        observation = views[active[index]].decision(active[index], id, selection, textMode)
       else:
         game.applyTurn(active, decisions)
         while not game.done:
@@ -290,7 +314,7 @@ when isMainModule:
           for actor in active: views[actor] = seatView(game, actor)
           decisions = @[]
           index = 0
-          observation = views[active[index]].decision(active[index], id)
+          observation = views[active[index]].decision(active[index], id, selection, textMode)
       response = %*{"kind": "accepted", "action": candidate,
         "observation": observation}
     else:
