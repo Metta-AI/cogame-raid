@@ -8,10 +8,10 @@
 ##   coworld upload-policy <raid-image> --name my-raid \
 ##     --run /bin/raid-player --secret-env PLAYER_PROMPT="<your strategy>"
 
-import std/[json, options, os, strutils, monotimes, times]
+import std/[json, options, os, strutils]
 import curly
 import whisky
-import raid/[llm, orders, types, prompts, evidence]
+import raid/[llm, orders, types]
 
 const
   ConnectAttempts = 5
@@ -108,39 +108,15 @@ when isMainModule:
           reply["cause"] = %"no_credentials"
           reply["error"] = %"no credentials"
         else:
-          let started = getMonoTime()
-          let system = payload["system"].getStr()
-          var user = userPrompt(payload["view"], prompt)
-          if payload["retry"].getBool(): user.add(RetryHint)
-          let request = client.requestFor(system, user, -1)
-          let captureDir = getEnv("RAID_ATTEMPT_TRACE_DIR")
-          let attemptId = payload["attempt_id"].getStr()
-          let evidencePath = captureDir / (attemptId & ".jsonl")
-          if captureDir.len > 0:
-            let metadata = payload["prompt_configuration"]
-            let selection = promptSelection(%*{"promptVariant": metadata["selection"],
-              "promptSeed": metadata["seed"]})
-            doAssert metadata == selection.selectionMetadata()
-            doAssert system == systemPrompt(selection)
-            writePrivate(evidencePath, $(%*{"event_type": "attempt_started",
-              "visibility": "private", "attempt_id": attemptId,
-              "decision_id": payload["id"], "seat": payload["slot"],
-              "source_revision": getEnv("RAID_SOURCE_REVISION"),
-              "prompt_configuration": promptMetadata(selection, system, user),
-              "prompt": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-              "request": {"url": request.url, "body": parseJson(request.body)}}) & "\n")
-          var rawResponse = ""
-          var responseText = ""
-          var httpStatus = 0
-          var responseHeaders = newJObject()
           try:
+            var user = userPrompt(payload["view"], prompt)
+            if payload["retry"].getBool():
+              user.add(RetryHint)
+            let request = client.requestFor(payload["system"].getStr(), user, -1)
             let response = client.curl.post(request.url, request.headers,
               request.body, payload["timeout_seconds"].getInt())
-            rawResponse = response.body
-            httpStatus = response.code
-            for header in response.headers: responseHeaders[header[0]] = %header[1]
-            responseText = client.textOf(response, "", request.url)
-            reply["action"] = extractJsonObject(responseText)
+            reply["action"] = extractJsonObject(
+              client.textOf(response, "", request.url))
           except LlmError as error:
             reply["cause"] = %"transport_error"
             reply["error"] = %error.msg
@@ -150,12 +126,6 @@ when isMainModule:
           except CatchableError as error:
             reply["cause"] = %"transport_error"
             reply["error"] = %error.msg
-          if captureDir.len > 0:
-            appendPrivate(evidencePath, %*{"event_type": "attempt_finished", "visibility": "private",
-              "attempt_id": attemptId, "decision_id": payload["id"], "seat": payload["slot"],
-              "raw_response": rawResponse, "response": responseText,
-              "response_headers": responseHeaders, "http_status": httpStatus,
-              "latency_ms": (getMonoTime() - started).inMilliseconds, "player_reply": reply})
         socket.send($reply)
       else:
         discard

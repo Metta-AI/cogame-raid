@@ -192,14 +192,14 @@ proc hostedOrder(candidate, view: JsonNode): JsonNode =
     result["point"] = %*[candidate["point_x"], candidate["point_y"]]
 
 proc decision(view: JsonNode, seat, id: int, selection: PromptSelection,
-    textMode: bool): JsonNode =
+    config: GameConfig, textMode: bool): JsonNode =
   var properties = newJObject()
   var required = newJArray()
   for head in heads():
     let name = head["name"].getStr()
     properties[name] = %*{"enum": head["choices"]}
     required.add(%name)
-  let system = systemPrompt(selection)
+  let system = systemPrompt(selection, config)
   let user = userPrompt(view, OperatorPrompt)
   let semantic = copy(view)
   semantic["prompt_template"] = promptMetadata(selection, system, user)
@@ -263,7 +263,7 @@ when isMainModule:
       decisions = @[]
       index = 0
       id = 0
-      response = views[active[index]].decision(active[index], id, selection, textMode)
+      response = views[active[index]].decision(active[index], id, selection, game.config, textMode)
     of "encode":
       doAssert not game.done
       let seat = active[index]
@@ -290,7 +290,7 @@ when isMainModule:
       inc id
       var observation: JsonNode
       if index < active.len:
-        observation = views[active[index]].decision(active[index], id, selection, textMode)
+        observation = views[active[index]].decision(active[index], id, selection, game.config, textMode)
       else:
         game.applyTurn(active, decisions)
         while not game.done:
@@ -314,7 +314,7 @@ when isMainModule:
           for actor in active: views[actor] = seatView(game, actor)
           decisions = @[]
           index = 0
-          observation = views[active[index]].decision(active[index], id, selection, textMode)
+          observation = views[active[index]].decision(active[index], id, selection, game.config, textMode)
       response = %*{"kind": "accepted", "action": candidate,
         "observation": observation}
     else:

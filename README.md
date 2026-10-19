@@ -99,7 +99,7 @@ PLAYER_SCRIPTED=greenhorn  /bin/raid-player
 
 Game configuration accepts `promptVariant` and `promptSeed`. The default
 `canonical` retains the original wording; `mixed` requires a nonnegative seed
-and chooses one of five introductions for the whole encounter. Rules, role
+and chooses one of five complete rule presentations for the whole encounter. Rules, role
 deals, observations, operator instructions, and action parsing remain fixed.
 See [training and evaluation](TRAINING.md) for explicit wordings and held-out
 evaluation controls.

@@ -10,8 +10,8 @@
 ## on the scripted layer rather than overrun, and only stop dead at
 ## `wallClockBudgetSeconds` if even that was not enough.
 
-import std/[json, os]
-import types, state, sim, baselines, labels, scoring, broadcast, orders, evidence, prompts
+import std/[json]
+import types, state, sim, baselines, labels, scoring
 
 type
   Clock* = proc (): float {.closure.}
@@ -49,10 +49,6 @@ proc noteFallback(sim: var Sim, seat: int, decision: Decision) =
 
 proc applyTurn*(sim: var Sim, seats: seq[int], decisions: seq[Decision]) =
   ## Spread the per-seat decisions over all five slots and install them.
-  let trace = getEnv("RAID_HOST_TRACE_PATH")
-  var observations: seq[JsonNode]
-  if trace.len > 0:
-    for seat in seats: observations.add(seatView(sim, seat))
   var orders = newSeq[Order](sim.cogs.len)
   var sources = newSeq[OrderSource](sim.cogs.len)
   var latencies = newSeq[int](sim.cogs.len)
@@ -69,18 +65,6 @@ proc applyTurn*(sim: var Sim, seats: seq[int], decisions: seq[Decision]) =
   for index, seat in seats:
     if index < decisions.len:
       sim.noteFallback(seat, decisions[index])
-      if trace.len > 0:
-        let decision = decisions[index]
-        let selected = if decision.source == osLlm:
-            %($sim.tick & "-" & $seat & "-" & $(decision.attempts - 1))
-          else: newJNull()
-        appendPrivate(trace, %*{"event_type": "host_decision", "tick": sim.tick,
-          "turn": sim.turn, "seat": seat, "observation": observations[index],
-          "prompt_configuration": selectionMetadata(sim.config.promptSelection),
-          "submitted_action": orderToJson(decision.order),
-          "executed_action": orderToJson(sim.orders[seat]),
-          "selected_attempt_id": selected, "source": $decision.source,
-          "failure": $decision.cause, "attempts": decision.attempts})
 
 proc runEncounter*(sim: var Sim, decide: Decider, now: Clock,
     kinds: seq[ScriptKind] = @[], onTurn: TurnHook = nil) =

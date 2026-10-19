@@ -5,7 +5,7 @@
 
 import std/[json, os, strutils, unicode]
 import curly
-import types, labels, prompts
+import types, labels, prompts, config
 
 const
   AnthropicUrl = "https://api.anthropic.com/v1/messages"
@@ -35,7 +35,13 @@ Every 5 seconds you issue ONE order. A deterministic controller executes it for 
 the reaction you pre-authorised in "on_telegraph" the instant a telegraph appears. You
 do not drive motors directly, and you cannot react faster than your order allows - so
 choose the reaction, not the dodge.
-Reply with a single JSON object and NOTHING else. Your reply MUST begin with '{'.
+"""
+
+  RetryHint* = "\nYour previous reply was invalid, reply with a single JSON " &
+    "object beginning with '{' carrying at least an \"intent\" legal for " &
+    "your role."
+
+const ReplyRules = """Reply with a single JSON object and NOTHING else. Your reply MUST begin with '{'.
 Schema:
 {"intent":"<one of the legal intents for your role>",
  "target":"boss|A1..A8|Alpha|Bravo|Charlie|Delta|Echo|null",
@@ -54,23 +60,50 @@ on_telegraph: dodge = leave the shape; hold = stay and keep attacking; soak = st
 a pour circle; spread = get 140 px from everyone. The tank normally holds cleaves and
 everyone else dodges them.
 """
-  SystemPrompt* = CanonicalIntroduction & CommonRules
 
-  RetryHint* = "\nYour previous reply was invalid, reply with a single JSON " &
-    "object beginning with '{' carrying at least an \"intent\" legal for " &
-    "your role."
-
-proc systemPrompt*(selection: PromptSelection): string =
-  let introduction = case selection.selectedVariant
-    of pvCanonical: CanonicalIntroduction
-    of pvPlain: "Five cogs, including you, fight the scripted foundry boss SMELTER-9 in a round pit\n"
-    of pvNumbered: "1. You are one of five cogs.\n2. Fight SMELTER-9, a scripted foundry boss, in a round pit\n"
-    of pvQuestions: "Who are you? One of five cogs. Who do you fight? SMELTER-9, a scripted foundry boss, in a round pit\n"
-    of pvReordered: "In a round pit, you and four other cogs fight SMELTER-9, a scripted foundry boss. The pit is\n"
-    of pvHeldoutBriefing: "Your team of five cogs faces SMELTER-9, a scripted foundry boss, in a round pit\n"
-    of pvHeldoutReference: "Team: five cogs, including you. Opponent: scripted foundry boss SMELTER-9. Arena: a round pit\n"
-    of pvMixed: raise newException(ValueError, "mixed wording must resolve before rendering")
-  introduction & CommonRules
+proc systemPrompt*(selection: PromptSelection, config: GameConfig): string =
+  var enrage = formatFloat(float(config.enrageTicks) / float(TargetFps), ffDecimal, 2)
+  var deadline = formatFloat(float(config.maxTicks) / float(TargetFps), ffDecimal, 2)
+  var cadence = formatFloat(float(config.turnTicks) / float(TargetFps), ffDecimal, 2)
+  enrage.trimZeros()
+  deadline.trimZeros()
+  cadence.trimZeros()
+  if selection.selectedVariant == pvCanonical:
+    return CanonicalIntroduction & CommonRules.replace("At 240 s", "At " & enrage & " s").replace(
+      "at 270 s.", "at " & deadline & " s.").replace("Every 5 seconds", "Every " & cadence & " seconds").replace(
+      "5 seconds:", cadence & " seconds:") & ReplyRules
+  let arena = "You are one of five cogs facing the scripted foundry boss SMELTER-9. The circular " &
+    "pit has radius 300 pixels and centre (617,329), on a 1235x659 floor with x right and y down. " &
+    "Four 40x40 pillars at (511,223), (723,223), (511,435), and (723,435) block movement, " &
+    "sight, healing, and ranged attacks, but not floor effects."
+  let roles = "Your tank, healer, or dps role is dealt each episode and appears in your view. " &
+    "Use that role. The boss stays fixed at the centre and swings at the highest-threat cog every 1.5 seconds."
+  let phases = "The phases are Forge at 100-70% health, Slag at 70-35% with adds and Overload, " &
+    "and Meltdown at 35-0% with Crucible Pours. At " & enrage & " seconds, enrage triples " &
+    "boss damage. The fight stops at " & deadline & " seconds."
+  let hazards = "CLEAVE warns for two seconds before hitting a 90-degree cone extending 180 pixels " &
+    "in front of the boss; only the tank should occupy it. SLAG POUR targets a random non-tank " &
+    "with a 90-pixel circle, warns for 2.5 seconds, and leaves a burning pool for ten seconds. " &
+    "Phase-three CRUCIBLE POUR warns for three seconds over a 110-pixel circle. Its 240 damage " &
+    "is shared among everyone inside. If nobody soaks it, the boss permanently gains a +20% damage stack."
+  let teamwork = "OVERLOAD casts for four seconds. Unless one dps interrupts, it hits each of " &
+    "the five cogs for 70 and heals the boss for 400. Two interrupts on one cast waste an " &
+    "interrupt. SLAG CRAWLERS arrive in pairs during phase two; four or more living adds " &
+    "increase boss damage by 25%."
+  let control = "Issue one order every " & cadence & " seconds. The deterministic controller " &
+    "executes it for the next " & cadence & " seconds, moving to your station, maintaining " &
+    "attacks on your target, and immediately applying the on_telegraph reaction you chose " &
+    "when a warning appears. You do not drive motors or react faster than the order permits: " &
+    "choose the reaction rather than attempting a manual dodge."
+  let briefing = case selection.selectedVariant
+    of pvPlain: arena & "\n\n" & roles & "\n\n" & phases & "\n\n" & hazards & "\n\n" & teamwork & "\n\n" & control
+    of pvNumbered: "1. Arena\n" & arena & "\n2. Role\n" & roles & "\n3. Phases\n" & phases & "\n4. Floor mechanics\n" & hazards & "\n5. Coordination\n" & teamwork & "\n6. Orders\n" & control
+    of pvQuestions: "Who am I?\n" & roles & "\nWhere do we fight?\n" & arena & "\nHow does the fight progress?\n" & phases & "\nWhat must we handle?\n" & hazards & "\n" & teamwork & "\nHow do I react?\n" & control
+    of pvReordered: "ORDER CONTROL\n" & control & "\nMECHANICS\n" & hazards & "\n" & teamwork & "\nPHASE CLOCK\n" & phases & "\nROLE\n" & roles & "\nARENA\n" & arena
+    of pvHeldoutBriefing: "Read your assignment.\n" & roles & "\nLocate the encounter.\n" & arena & "\nTrack the phases.\n" & phases & "\nPrepare coordinated responses.\n" & teamwork & "\n" & hazards & "\nSet your order.\n" & control
+    of pvHeldoutReference: "Arena reference: " & arena & "\nControl reference: " & control & "\nPhase reference: " & phases & "\nRole reference: " & roles & "\nMechanics reference: " & teamwork & "\n" & hazards
+    of pvCanonical, pvMixed: raise newException(ValueError, "alternate wording must resolve")
+  briefing & "\n\n" & ReplyRules
 
 type
   LlmTransport = enum

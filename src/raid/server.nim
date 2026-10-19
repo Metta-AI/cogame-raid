@@ -32,7 +32,7 @@ import curly
 import mummy
 import mummy/routers
 import types, config, state, sim, baselines, broadcast, scoring,
-  replay, engine, llm, orders, labels, prompts, evidence
+  replay, engine, llm, orders, labels
 
 const
   DoneBroadcastSeconds = 3.0
@@ -171,10 +171,6 @@ proc finishEpisode(runtimeConfig: RuntimeConfig) =
     broadcastDone(results)
     refreshSnapshotLocked()
   echo "raid: writing results and replay (", replayData.len, " bytes)"
-  let trace = getEnv("RAID_HOST_TRACE_PATH")
-  if trace.len > 0:
-    appendPrivate(trace, %*{"event_type": "episode_finished",
-      "source_revision": getEnv("RAID_SOURCE_REVISION"), "results": results})
   ## The REPLAY first, then the results: the hosted worker treats results.json
   ## as the end of the episode and tears the pods down when it appears, so a
   ## replay written after it can be lost. Same order as the starter
@@ -203,11 +199,6 @@ proc finishEpisode(runtimeConfig: RuntimeConfig) =
 proc runGame(runtimeConfig: RuntimeConfig) {.gcsafe.} =
   {.gcsafe.}:
     let config = gameSim.config
-    let trace = getEnv("RAID_HOST_TRACE_PATH")
-    if trace.len > 0:
-      writePrivate(trace, $(%*{"event_type": "episode_started",
-        "source_revision": getEnv("RAID_SOURCE_REVISION"),
-        "prompt_configuration": selectionMetadata(config.promptSelection)}) & "\n")
     let gameStart = epochTime()
     let connectDeadline = gameStart + config.playerConnectTimeoutSeconds
     while epochTime() < connectDeadline:
@@ -292,11 +283,8 @@ proc runGame(runtimeConfig: RuntimeConfig) {.gcsafe.} =
             try:
               shared.playerSockets[seat].send($ %*{
                 "type": "decision", "id": id, "slot": seat,
-                "attempt_id": $view.tick & "-" & $seat & "-" & $attempt,
                 "view": seatView(view, seat),
-                "system": systemPrompt(config.promptSelection),
-                "prompt_configuration": selectionMetadata(config.promptSelection),
-                "retry": attempt > 0,
+                "system": systemPrompt(config.promptSelection, config), "retry": attempt > 0,
                 "timeout_seconds": timeout
               })
               sent.add(index)
@@ -356,14 +344,6 @@ proc runGame(runtimeConfig: RuntimeConfig) {.gcsafe.} =
                 cause: fcParse,
                 detail: runeCap(error.msg, MaxDetailRunes))
               retry.add(index)
-          if trace.len > 0:
-            appendPrivate(trace, %*{"event_type": "host_attempt",
-              "attempt_id": $view.tick & "-" & $seat & "-" & $attempt,
-              "tick": view.tick, "seat": seat, "reply": reply,
-              "accepted": result[index].source == osLlm,
-              "parsed_action": (if result[index].source == osLlm:
-                orderToJson(result[index].order) else: newJNull()),
-              "failure": $result[index].cause})
         pending = retry
       let latency = int((epochTime() - started) * 1000.0)
       for i in 0 ..< result.len:
