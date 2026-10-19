@@ -208,7 +208,7 @@ def main() -> None:
         orders = {(row["turn"], row["seat"]): row for row in replay["events"] if row["type"] == "order"}
         for row in decisions:
             recorded = orders[(row["turn"], row["seat"])]
-            for key in ("intent", "target", "station", "on_telegraph", "note", "say"):
+            for key in ("intent", "target", "station", "point", "on_telegraph", "note", "say"):
                 assert recorded[key] == row["executed_action"][key]
         assert b"PRIVATE-STRATEGY-" not in (work / "episode.replay").read_bytes()
         assert "PRIVATE-STRATEGY-" not in (work / "host.jsonl").read_text()
