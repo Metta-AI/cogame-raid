@@ -23,7 +23,7 @@ export_posttrain PRIVATE_OUTPUT 10 1 sprint mixed 0
 
 Original train/validation JSONL and manifests are retained. Every fifth scenario
 is validation, and wording cycles separately within each split. Scenario families
-use `raid-SEED` across variants. Episode IDs include selected wording and prompt seed. The native parser and encounter engine execute
+use `raid-SEED` across variants. Episode IDs include requested selection, resolved wording, and prompt seed. The native parser and encounter engine execute
 scripted teacher orders. Export from clean committed source and review content
 before training. Existing output directories are refused.
 
