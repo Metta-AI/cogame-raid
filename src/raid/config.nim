@@ -2,13 +2,14 @@
 ## resolved config document that is pinned verbatim into every replay.
 
 import std/[json, strutils]
-import types
+import types, prompts
 
 type
   PlayerConfig* = object
     name*: string
 
   GameConfig* = object
+    promptSelection*: PromptSelection
     tokens*: seq[string]
     players*: seq[PlayerConfig]
     seed*: int
@@ -100,6 +101,7 @@ proc update*(config: var GameConfig, configJson: string) =
   let node = parseJson(configJson)
   if node.kind != JObject:
     raise newException(RaidError, "config must be a JSON object")
+  config.promptSelection = promptSelection(node)
   if node.hasKey("tokens"):
     config.tokens = @[]
     for token in node["tokens"]:

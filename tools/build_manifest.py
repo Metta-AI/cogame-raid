@@ -56,7 +56,20 @@ CONFIG_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
     "required": ["tokens", "players"],
+    "allOf": [{"if": {"required": ["promptVariant"],
+                       "properties": {"promptVariant": {"const": "mixed"}}},
+               "then": {"required": ["promptSeed"]}}],
     "properties": {
+        "promptVariant": {
+            "type": "string", "default": "canonical",
+            "enum": ["canonical", "plain", "numbered", "questions", "reordered",
+                     "heldout-briefing", "heldout-reference", "mixed"],
+            "description": "Episode-stable rules wording, independent of role and encounter randomness.",
+        },
+        "promptSeed": {
+            "type": "integer", "minimum": 0,
+            "description": "Independent wording seed; required when promptVariant is mixed.",
+        },
         "tokens": {
             "description": "One connection token per player slot, indexed by slot.",
             "type": "array", "minItems": SEATS, "maxItems": SEATS,

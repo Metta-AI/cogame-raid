@@ -277,14 +277,14 @@ proc runGame(runtimeConfig: RuntimeConfig) {.gcsafe.} =
                 detail: (if shared.unavailable[seat]: "no credentials"
                          else: "player disconnected"))
               continue
-            let id = view.turn * 2 + attempt + 1
+            let id = (view.tick div config.turnTicks) * 2 + attempt + 1
             shared.requestIds[seat] = id
             shared.replies[seat] = nil
             try:
               shared.playerSockets[seat].send($ %*{
                 "type": "decision", "id": id, "slot": seat,
                 "view": seatView(view, seat),
-                "system": SystemPrompt, "retry": attempt > 0,
+                "system": systemPrompt(config.promptSelection, config), "retry": attempt > 0,
                 "timeout_seconds": timeout
               })
               sent.add(index)

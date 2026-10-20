@@ -1,21 +1,24 @@
 ## Export complete Raid encounters as Metta post-training examples.
-## Usage: nim r --path:src tools/export_posttrain.nim OUTPUT GAMES [FIRST_SEED] [VARIANT]
+## Usage: nim r --path:src tools/export_posttrain.nim OUTPUT GAMES [FIRST_SEED] [VARIANT] [PROMPT_VARIANT PROMPT_SEED]
 
 import std/[json, os, osproc, strutils]
 import raid/[arena, baselines, broadcast, config, engine, llm, orders,
-  scoring, state, types]
+  scoring, state, types, prompts]
 
 const OperatorPrompt = "Choose legal orders that maximize the team's score over the complete encounter."
 const Variants = ["default", "sprint"]
 
 when isMainModule:
   let args = commandLineParams()
-  if args.len notin 2 .. 4:
-    quit("usage: export_posttrain OUTPUT GAMES [FIRST_SEED] [VARIANT]", 1)
+  if args.len notin [2, 3, 4, 6]:
+    quit("usage: export_posttrain OUTPUT GAMES [FIRST_SEED] [VARIANT] [PROMPT_VARIANT PROMPT_SEED]", 1)
   let output = args[0]
   let games = parseInt(args[1])
   let firstSeed = if args.len >= 3: parseInt(args[2]) else: 1
-  let variant = if args.len == 4: args[3] else: Variants[0]
+  let variant = if args.len >= 4: args[3] else: Variants[0]
+  let configured = promptSelection(if args.len == 6:
+    %*{"promptVariant": args[4], "promptSeed": parseInt(args[5])} else: newJObject())
+  doAssert configured.selectedVariant notin {pvHeldoutBriefing, pvHeldoutReference}, "held-out wording is evaluation only"
   if games < 10 or firstSeed < 1:
     quit("at least ten games and a positive first seed are required", 1)
   if variant notin Variants:
@@ -35,7 +38,13 @@ when isMainModule:
     trainRows: seq[string]
     validationRows: seq[string]
     runs = newJArray()
+    wordingCounts: array[2, int]
   for seed in firstSeed ..< firstSeed + games:
+    var selection = configured
+    let split = ord(seed mod 5 == 0)
+    if selection.variant == pvMixed:
+      selection.seed += wordingCounts[split]
+      inc wordingCounts[split]
     var config = defaultGameConfig()
     let runtimeConfig = copy(variantConfig)
     runtimeConfig["tokens"] = newJArray()
@@ -43,6 +52,7 @@ when isMainModule:
       runtimeConfig["tokens"].add(%("t" & $seat))
     runtimeConfig["seed"] = %seed
     config.update($runtimeConfig)
+    config.promptSelection = selection
     var sim = initSim(config, map)
     var rows: seq[string]
     let decide: Decider = proc (view: Sim, seats: seq[int]): seq[Decision] =
@@ -56,11 +66,13 @@ when isMainModule:
         doAssert repairOrder(view, seat, parsed) ==
           repairOrder(view, seat, teacher.order)
         rows.add($(%*{
-          "episode_id": "raid-" & variant & "-" & $seed,
-          "seed": "raid-" & variant & "-" & $seed,
+          "episode_id": "raid-" & variant & "-" & $seed & "-" &
+            $selection.variant & "-" & $selection.selectedVariant & "-" & $selection.seed,
+          "seed": "raid-" & $seed,
           "decision_id": rows.len,
+          "prompt_template": selection.promptMetadata(systemPrompt(selection, config), userPrompt(seatView(view, seat), OperatorPrompt)),
           "prompt": [
-            {"role": "system", "content": SystemPrompt},
+            {"role": "system", "content": systemPrompt(selection, config)},
             {"role": "user", "content": userPrompt(seatView(view, seat),
               OperatorPrompt)}
           ],

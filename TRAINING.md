@@ -1,41 +1,36 @@
-# Metta post-training data
+# Raid prompt diversity and training
 
-The native simulator and published `stalwart` policy export supervised
-examples for both certified Raid variants:
+The `raid-rules-v3` bank has five complete training presentations and two
+evaluation-only presentations. Wording and order vary arena, roles, phases,
+mechanics, coordination, and controller explanations. Action grammar and
+strategy hints stay fixed. Alternate and held-out explanations are independently phrased.
+Every wording, including canonical, explains the shared kill-speed/health-removed score.
+Sprint states 120-second enrage and a 150-second stop from its configuration.
+Gameplay budgets remain unchanged.
 
-```sh
-nimby sync nimby.lock
-for variant in default sprint; do
-  nim r -d:release --path:src tools/export_posttrain.nim \
-    "/tmp/raid-${variant}" 10 1 "$variant"
-done
-```
-
-Each run reads the variant configuration from the Coworld manifest, adds the
-per-seat tokens supplied by the hosted platform, and plays complete seeded
-encounters. At each simultaneous turn, it records every living seat's hosted
-system and user prompts and a scripted order accepted by the game's reply
-parser. Parsed orders drive the native encounter engine. Whole encounters
-stay in one split. The output manifest records source revision, variant,
-scores, ending rule, and row counts. Existing output directories are never
-overwritten.
-
-Train an output with Metta post-training:
+Set `promptVariant` and `promptSeed`. Mixed selection requires an explicit
+nonnegative seed, resolves modulo five, and stays fixed across seats and retries.
+The game sends rendered rules through the existing player protocol. Native
+inference, the bridge, and exports use the same renderer and sampled configuration.
+Training resets and source exports reject held-out wording. Metadata records
+selection and exact system/user message hashes.
 
 ```sh
-nix develop -c uv run --package metta-posttrain --extra train \
-  python -m metta_posttrain.train --dataset /tmp/raid-default \
-  --output /tmp/raid-adapter --model Qwen/Qwen3-0.6B \
-  --max-steps 100 --max-length 4096
+python3 tools/test_prompt_games.py BRIDGE
+export_posttrain PRIVATE_OUTPUT 10 1 default mixed 0
+export_posttrain PRIVATE_OUTPUT 10 1 sprint mixed 0
 ```
 
-Ten complete encounters yielded 520 training and 247 validation examples
-for Default, and 442 and 175 for Sprint. All 1,384 examples fit the
-Qwen2.5-0.5B-Instruct tokenizer in 4,096 tokens; the maximum was 1,913.
-These examples distill the scripted teacher; they do not establish stronger
-league play.
-One CPU optimizer step per variant with a local tiny model included every
-example and reduced heldout loss, verifying the Metta post-training path.
+Original train/validation JSONL and manifests are retained. Every fifth scenario
+is validation, and wording cycles separately within each split. Scenario families
+use `raid-SEED` across variants. Episode IDs include requested selection, resolved wording, and prompt seed. The native parser and encounter engine execute
+scripted teacher orders. Export from clean committed source and review content
+before training. Existing output directories are refused.
+
+Compare canonical and mixed training with fixed policies, seats, scenario seeds,
+operator guidance, decoder settings, and game budgets. Report scores, malformed
+responses, retries, and failures by wording. Scripted equivalence does not establish
+improved learning stability.
 
 ## Numeric training
 

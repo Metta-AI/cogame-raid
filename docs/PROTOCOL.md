@@ -57,6 +57,8 @@ rules. The first attempt and retry are bounded by `timeout_seconds`:
 
 ```json
 {"type":"decision", "id":35, "slot":2, "view":{...},
+ "attempt_id":"2040-2-0",
+ "prompt_configuration":{"bank":"raid-rules-v1","variant":"canonical","selection":"canonical","seed":0},
  "system":"<rules and order schema>", "retry":false,
  "timeout_seconds":7}
 ```
@@ -67,6 +69,19 @@ frame with `view.you.alive == false` and no further decisions.
 
 At episode end the game sends `{"done":true,"result":{...}}`, then closes.
 The final broadcast is bounded at 3 seconds per seat.
+
+### Private attempt evidence
+
+Set `RAID_SOURCE_REVISION` to the qualified commit on the host and players.
+`RAID_HOST_TRACE_PATH` enables a private host JSONL file containing parser
+outcomes, installed orders, attempt identifiers, and final results.
+`RAID_ATTEMPT_TRACE_DIR` enables private per-attempt player files containing
+the exact HTTP request body, prompt hashes, response body and headers, and
+the submitted reply. Files are created exclusively with owner-only access.
+These paths must be outside published artifact directories. Player evidence
+contains operator instructions; the host trace does not. Neither is part of
+the public replay. An attempt identifier joins the two records; only the host
+establishes which order executed.
 
 ### The per-seat view
 
