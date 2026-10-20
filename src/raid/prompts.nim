@@ -17,7 +17,7 @@ type
     seed*: int
 
 const
-  PromptBankVersion* = "raid-rules-v2"
+  PromptBankVersion* = "raid-rules-v3"
 
 proc promptSelection*(node: JsonNode): PromptSelection =
   if node.kind != JObject:

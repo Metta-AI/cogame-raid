@@ -66,7 +66,8 @@ when isMainModule:
         doAssert repairOrder(view, seat, parsed) ==
           repairOrder(view, seat, teacher.order)
         rows.add($(%*{
-          "episode_id": "raid-" & variant & "-" & $seed,
+          "episode_id": "raid-" & variant & "-" & $seed & "-" &
+            $selection.selectedVariant & "-" & $selection.seed,
           "seed": "raid-" & $seed,
           "decision_id": rows.len,
           "prompt_template": selection.promptMetadata(systemPrompt(selection, config), userPrompt(seatView(view, seat), OperatorPrompt)),

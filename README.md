@@ -97,8 +97,8 @@ PLAYER_SCRIPTED=greenhorn  /bin/raid-player
 
 ## Watching
 
-Game configuration accepts `promptVariant` and `promptSeed`. The default
-`canonical` retains the original wording; `mixed` requires a nonnegative seed
+Game configuration accepts `promptVariant` and `promptSeed`. All wordings include the shared kill-speed/health-removed score. Alternate and held-out
+explanations use independent phrasing; `mixed` requires a nonnegative seed
 and chooses one of five complete rule presentations for the whole encounter. Rules, role
 deals, observations, operator instructions, and action parsing remain fixed.
 See [training and evaluation](TRAINING.md) for explicit wordings and held-out

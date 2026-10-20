@@ -1,10 +1,11 @@
 # Raid prompt diversity and training
 
-The `raid-rules-v2` bank has five complete training presentations and two
+The `raid-rules-v3` bank has five complete training presentations and two
 evaluation-only presentations. Wording and order vary arena, roles, phases,
 mechanics, coordination, and controller explanations. Action grammar and
-strategy hints stay fixed. Default canonical bytes are unchanged; Sprint now
-correctly states 120-second enrage and a 150-second stop from its configuration.
+strategy hints stay fixed. Alternate and held-out explanations are independently phrased.
+Every wording, including canonical, explains the shared kill-speed/health-removed score.
+Sprint states 120-second enrage and a 150-second stop from its configuration.
 Gameplay budgets remain unchanged.
 
 Set `promptVariant` and `promptSeed`. Mixed selection requires an explicit
@@ -22,7 +23,7 @@ export_posttrain PRIVATE_OUTPUT 10 1 sprint mixed 0
 
 Original train/validation JSONL and manifests are retained. Every fifth scenario
 is validation, and wording cycles separately within each split. Scenario families
-use `raid-SEED` across variants. The native parser and encounter engine execute
+use `raid-SEED` across variants. Episode IDs include selected wording and prompt seed. The native parser and encounter engine execute
 scripted teacher orders. Export from clean committed source and review content
 before training. Existing output directories are refused.
 
