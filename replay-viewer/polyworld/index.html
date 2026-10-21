@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Raid / Polyworld replay experiment</title>
+<style>
+:root{color-scheme:dark;--copper:#f0a75c;--ink:#11191e}*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(ellipse at top,#263841,var(--ink));color:#e6e5d9;font:16px Georgia,serif}
+main{max-width:1275px;margin:auto;padding:20px}h1{font-weight:normal;letter-spacing:.05em;font-size:24px}
+canvas{display:block;width:100%;aspect-ratio:1235/659;background:#080a0b;border:1px solid #445058}
+nav{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:14px 0}
+button{background:#263841;color:var(--copper);border:1px solid #60717b;padding:8px 14px;font:inherit;cursor:pointer}
+input{flex:1;min-width:120px;accent-color:var(--copper)}output{font-variant-numeric:tabular-nums}
+#status{color:#b6c7c9;overflow-wrap:anywhere}@media(max-width:500px){main{padding:10px}h1{font-size:18px}}
+</style></head><body><main>
+<h1>SMELTER-9 / Raid replay experiment</h1><canvas id="canvas" aria-label="Raid replay arena"></canvas>
+<nav><button id="restart">Restart</button><button id="back">Back</button><button id="play" disabled>Play</button><button id="forward">Forward</button>
+<input id="seek" type="range" min="0" max="0" value="0" aria-label="Replay tick"><output id="tick">0</output></nav>
+<p id="status">Loading local replay…</p></main>
+<script src="raid_polyworld.js"></script><script src="replay.js"></script></body></html>
