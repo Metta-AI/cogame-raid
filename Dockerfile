@@ -40,9 +40,9 @@ RUN rm -f nim.cfg && \
     else echo "--path:\"$pkg\"" >> nim.cfg; fi; \
   done && \
   echo '--path:"src"' >> nim.cfg && \
-  nim c -d:release -d:useMalloc --opt:speed --stackTrace:on \
+  nim c -d:release -d:useMalloc --opt:speed --stackTrace:on --parallelBuild:1 \
     --nimcache:/tmp/raid-nimcache --out:raid src/raid.nim && \
-  nim c -d:release -d:useMalloc --opt:speed --stackTrace:on \
+  nim c -d:release -d:useMalloc --opt:speed --stackTrace:on --parallelBuild:1 \
     --nimcache:/tmp/raid-player-nimcache --out:raid-player \
     src/raid_player.nim
 
