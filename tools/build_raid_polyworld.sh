@@ -14,13 +14,16 @@ printf '%s  %s\n' c5a77d9b0b7f58ffefdf9fe73b2423ec9ea8f3cc29fbab150b0c0d021a9d98
   "$polyworld/src/polyworld/shapes.nim" | sha256sum -c -
 mkdir -p "$output"
 paths=("--path:$root/src" "--path:$polyworld/src")
-for package in "${NIMBY_PACKAGES:-$HOME/.nimby/pkgs}"/* "$dependencies"/*; do
-  [[ -d "$package" ]] || continue
+while read -r name version url revision; do
+  # Polyworld's WebGL backend requires this qualified Shady revision.
+  if [[ "$name" == shady ]]; then revision=c899f7cd17dbe7021d6e3aa2908e6de6549c47f1; fi
+  package="$dependencies/$name-$revision"
+  [[ -d "$package" ]] || { printf 'Missing pinned dependency: %s\n' "$package" >&2; exit 1; }
   if [[ -d "$package/src" ]]; then paths+=("--path:$package/src")
   else paths+=("--path:$package"); fi
-done
+done < "$root/nimby.lock"
 cd "$root"
 RAID_BROWSER_OUTPUT="$output" EMCC_CORES=1 nim c --skipParentCfg:on \
-  --skipUserCfg:on --hints:off "${paths[@]}" replay-viewer/polyworld/raid_polyworld.nim
+  --skipUserCfg:on --noNimblePath --hints:off "${paths[@]}" replay-viewer/polyworld/raid_polyworld.nim
 cp replay-viewer/polyworld/index.html replay-viewer/polyworld/replay.js "$output/"
 printf 'Build complete. Export a public replay as %s/encounter.public.json before serving locally.\n' "$output"
